@@ -418,7 +418,7 @@ class ControllerApiProduct extends Controller {
 
 
 		
-			$json = '';
+			//$json = '';
 			$image_f=  file_get_contents('php://input');
 
 			$nameZip = DIR_CACHE . $this->request->get['nameZip'].'.zip';
@@ -2201,18 +2201,17 @@ $languages = $this->getLanguages();
 					$first_product_description = false;
 					
 		 			foreach ($attributes as $attribute_str) {
-					
+					        
 							$attribute_id = $attribute_str->{'attribute_id'};
+							$attribute_lang_id = $attribute_str->{'language'};
+							$text= urldecode($this->db->escape($attribute_str->{'text'}));
 							
-							
-							$text= urldecode($this->db->escape($attribute_str->{'text'}));	
-					
-							$sql_product_attribute .= ($first_product_attribute ) ? "" : ",";
-							$first_product_attribute = false;
-							$sql_product_attribute .= " ($product_id,$attribute_id,$language_id,'$text') ";
+                            if ($language_code == $attribute_lang_id) {
+                                $sql_product_attribute .= ($first_product_attribute ) ? "" : ",";
+                                $first_product_attribute = false;
+                                $sql_product_attribute .= " ($product_id,$attribute_id,$language_id,'$text') ";
+                            }
 					}
-					
-	
 					
 				}
 				foreach ($filters as $filter_str) {
@@ -2350,24 +2349,22 @@ $languages = $this->getLanguages();
                
                if ((!isset($ProductOption[$product_id][$option_id])) and (!isset($option_vid[$option_id]))) {
 						
-
-            
-    							$sql_product_option .= ($first_product_option ) ? "" : ","; 
-    							$sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
-    							$first_product_option = false;
+                    $sql_product_option .= ($first_product_option ) ? "" : ","; 
+    				$sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
+    				$first_product_option = false;
     							
-    							$product_option_id_t = $product_option_id;
+    				$product_option_id_t = $product_option_id;
     							
-    							$product_option_id++;	
+    				$product_option_id++;	
                   
-                  $option_vid[$option_id] = $product_option_id_t;
+                    $option_vid[$option_id] = $product_option_id_t;
                   					
-						  } else {
+				} else {
 						
-							   $product_option_id_t = $option_vid[$option_id];
+					$product_option_id_t = $option_vid[$option_id];
 							
-						  }
-      
+				}
+                
       
       
 							$option_value_id= $option->{'option_value_id'};
