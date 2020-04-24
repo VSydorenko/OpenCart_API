@@ -1395,8 +1395,8 @@ $image_f=  file_get_contents('php://input');
 			
 			if ($exist_meta_title) {
 				$sql_category_description = "INSERT INTO `".DB_PREFIX."category_description` (`category_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`) VALUES ";
-				} else {
-					$sql_category_description = "INSERT INTO `".DB_PREFIX."category_description` (`category_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`) VALUES ";					
+			} else {
+				$sql_category_description = "INSERT INTO `".DB_PREFIX."category_description` (`category_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`) VALUES ";					
 			}
 			
 			$first_category_to_store = true;
@@ -1637,9 +1637,9 @@ $image_f=  file_get_contents('php://input');
 					$sql_category_description .= ",`description`= VALUES(`description`)";
 					
 					//if ($seo_update==1) {
-					//	$sql_category_description .= ",`meta_title`= VALUES(`meta_title`)";
-					//	$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
-					//	$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
+						$sql_category_description .= ",`meta_title`= VALUES(`meta_title`)";
+						$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
+						$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
 					//}
 	
 					$sql_category_description .=";";
@@ -1653,8 +1653,8 @@ $image_f=  file_get_contents('php://input');
 					$sql_category_description .= ",`description`= VALUES(`description`)";
 					
 					//if ($seo_update==1) {
-					//	$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
-					//	$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
+						$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
+						$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
 					//}
 	
 					$sql_category_description .=";";
