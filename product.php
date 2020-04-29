@@ -1719,34 +1719,23 @@ $image_f=  file_get_contents('php://input');
 
 	public function add() {       
 	
-		$this->load->language('api/product');
+        $this->load->language('api/product');
 
-    $type_option  = $this->request->get['type_option'];
+        $type_option  = $this->request->get['type_option'];
+		$seo_update   = (int)$this->request->get['seo_update'];
+        $description_update = (int)$this->request->get['description_update'];
 
-		$json = array();
-    
-    $option_vid = array();
+        $json = array();
+        $vozvrat_json = array();
 
+        $image_f = file_get_contents('php://input');
+        $nameZip = DIR_CACHE . $this->request->get['nameZip'].'.zip';
+        file_put_contents($nameZip, $image_f);
+        $zipArc = zip_open($nameZip);
 
+        if (is_resource($zipArc)) {
 			
-			$vozvrat_json = array();			
-			
-			//$product_structure= '{"foo-bar": 12345}';
-			//$obj = json_decode($product_structure);
-			
-	$image_f=  file_get_contents('php://input');
-
-	$nameZip = DIR_CACHE . $this->request->get['nameZip'].'.zip';
-			
-	file_put_contents($nameZip, $image_f);
-			
-
-			
-	$zipArc = zip_open($nameZip);
-			
-	if (is_resource($zipArc)) {
-			
-$languages = $this->getLanguages();
+            $languages = $this->getLanguages();
 			
 			// get list of the field names, some are only available for certain OpenCart versions
 			$query = $this->db->query( "DESCRIBE `".DB_PREFIX."product`" );
@@ -1788,12 +1777,10 @@ $languages = $this->getLanguages();
 			// save old url_alias_ids
 			$url_alias_ids = array();
 			//if (!$this->use_table_seo_url) {
-					$url_alias_ids = $this->getProductSEOKeywords();
+				$url_alias_ids = $this->getProductSEOKeywords();
 			//}
 			
-      
-      
-			
+
 			$sql = "Select max(`product_id`) as `product_id` from `".DB_PREFIX."product`;";
 			$result = $this->db->query( $sql );
 			$product_id_max = 0;
@@ -1809,11 +1796,7 @@ $languages = $this->getLanguages();
 			$sql_product  .= in_array('jan',$product_fields) ? "`jan`," : "";
 			$sql_product  .= in_array('isbn',$product_fields) ? "`isbn`," : "";
 			$sql_product  .= in_array('mpn',$product_fields) ? "`mpn`," : "";
-      
 
-      
-
-      
 			$sql_product  .= "`location`,`image`,`stock_status_id`,`model`,`manufacturer_id`,`shipping`,`price`,`points`,`date_added`,`date_modified`,`date_available`,`weight`,`weight_class_id`,`status`,";
 
 			$sql_product  .= "`tax_class_id`,`length`,`width`,`height`,`length_class_id`,`subtract`,`minimum`) VALUES ";
@@ -1832,13 +1815,12 @@ $languages = $this->getLanguages();
 			$sql_product_to_store = "INSERT INTO `".DB_PREFIX."product_to_store` (`product_id`,`store_id`) VALUES ";
 
 			$first_url_alias  = true;
+			$sql_url_alias = "INSERT INTO `".DB_PREFIX."seo_url` (`keyword`,`query`,`store_id`,`language_id`) VALUES ";
+
 			$first_url_aliasUPDATE  = true;
-
-			$sql_url_alias =       "INSERT INTO `".DB_PREFIX."seo_url` (`keyword`,`query`,`store_id`,`language_id`) VALUES ";
-			$sql_url_aliasUPDATE = "INSERT INTO `".DB_PREFIX."seo_url` (`seo_url_id`,`keyword`,`query`,`store_id`,`language_id`) VALUES "; 
+			$sql_url_aliasUPDATE = "INSERT INTO `".DB_PREFIX."seo_url` (`seo_url_id`,`keyword`,`query`,`store_id`,`language_id`) VALUES ";
 			
-
-			$first_category_id = true; 
+			$first_category_id = true;
 			$sql_category_id = "INSERT INTO `".DB_PREFIX."product_to_category` (`product_id`,`category_id`) VALUES ";
 			
 			$first_product_attribute = true; 
@@ -1847,8 +1829,7 @@ $languages = $this->getLanguages();
 			$first_product_filter = true; 
 			$sql_product_filter = "INSERT INTO `".DB_PREFIX."product_filter` (`product_id`,`filter_id`) VALUES ";
 			
-			
-			$first_product_option = true; 
+			$first_product_option = true;
 			$sql_product_option = "INSERT INTO `".DB_PREFIX."product_option` (`product_option_id`,`product_id`,`option_id`,`value`,`required`) VALUES ";			
 			
 			$first_product_option_value = true; 
@@ -1863,967 +1844,722 @@ $languages = $this->getLanguages();
 			$first_del_product_filter= true;
 			$sql_del_product_filter = "DELETE FROM `".DB_PREFIX."product_filter` WHERE product_id IN (";
 
-			
-			$seo_update   = (int)$this->request->get['seo_update'];
-      $description_update   = (int)$this->request->get['description_update'];
-									
-
-			$option_id= 0;
-
-			
-			$sql = "Select max(`product_option_id`) as `product_option_id` from `".DB_PREFIX."product_option`;";
-			$result = $this->db->query( $sql );
-			$product_option_id= 0;
-			
-			foreach ($result->rows as $row) {				
-				$product_option_id= (int)$row['product_option_id'];
-				$product_option_id++;				
-			}
-
-			$ProductOption= $this->getProductOption();
-
 			$first_delete_product_option = true;
 			$sql_delete_product_option = "DELETE FROM `".DB_PREFIX."product_option` WHERE product_id IN (";
 
+			$first_delete_path = true;
+			$sql_first_delete_path = "DELETE FROM `".DB_PREFIX."product_to_category` WHERE product_id IN (";
+
+			$first_delete_product_special = true;
+			$sql_delete_product_special = "DELETE FROM `".DB_PREFIX."product_special` WHERE product_id IN (";
+
+			$first_product_special = true;
+			$sql_product_special  = "INSERT INTO `".DB_PREFIX."product_special` (`product_id`,`customer_group_id`,`priority`,`price`,`date_start`,`date_end`) VALUES ";
+
+			$first_delete_product_discount = true;
+			$sql_delete_product_discount = "DELETE FROM `".DB_PREFIX."product_discount` WHERE product_id IN (";
+
+			$first_product_discount = true;
+			$sql_product_discount  = "INSERT INTO `".DB_PREFIX."product_discount` (`product_id`,`customer_group_id`,`quantity`,`priority`,`price`,`date_start`,`date_end`) VALUES ";
 
 			$first_product_description = true;
 			$first_product_tag  = true;
-			
 			if ($exist_table_product_tag) {
-						if ($exist_meta_title) {
-							$sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description` , '$meta_title', '$meta_description', '$meta_keyword', '$tag')" ;
-							
-						} else {
-							$sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`" ;
-						}
-						if ($exist_meta_h1) {
-							$sql_product_description  .= ", `meta_h1`";
-						}
-						$sql_product_description  .= ") VALUES ";
-						
-						$sql_product_tag  = "INSERT INTO `".DB_PREFIX."product_tag` (`product_id`,`language_id`,`tag`) VALUES " ;
-					} else {
-						if ($exist_meta_title) {
-							$sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`" ;
-						} else {
-							$sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag`";
-					}
-					if ($exist_meta_h1) {
-							$sql_product_description  .= ", `meta_h1`";
-					}
-					$sql_product_description  .= ") VALUES ";
-	}
-
-				
-			$first_delete_path = true;
-			$sql_first_delete_path = "DELETE FROM `".DB_PREFIX."product_to_category` WHERE product_id IN (";
-			
-
-				
-			$sql_delete_product_special= "DELETE FROM `".DB_PREFIX."product_special` WHERE product_id IN ("; 
-			$first_delete_product_special= true;
-
-			$sql_product_special  = "INSERT INTO `".DB_PREFIX."product_special` (`product_id`,`customer_group_id`,`priority`,`price`,`date_start`,`date_end`) VALUES "; 		
-											
-			$first_product_special = true;
-			
-			$sql_delete_product_discount= "DELETE FROM `".DB_PREFIX."product_discount` WHERE product_id IN ("; 
-			$first_delete_product_discount= true;
-
-			$sql_product_discount  = "INSERT INTO `".DB_PREFIX."product_discount` (`product_id`,`customer_group_id`,`quantity`,`priority`,`price`,`date_start`,`date_end`) VALUES "; 		
-											
-			$first_product_discount = true;
-			
-
-			$i = 1;
-			  	
-		while ($zip_entry = zip_read($zipArc)) {
-			  		if (zip_entry_open($zipArc, $zip_entry, "r")) {
-			  			
-			$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-			
-			
-		
-			$data_array= json_decode($dump);
-			
-			
-			foreach ($data_array as $data){
-				
-										 
-				$product_id = $data->{'product_id'};
-			
-				if ($product_id == 0) {
-				
-					$product_id_max = $product_id_max + 1;				
-					$product_id = $product_id_max;
-					$insert = 1;		
-															
-				}else {														
-					$insert = 0;
-					
-					$sql_first_delete_path .= ($first_delete_path ) ? "" : ",";
-					
-					
-					$sql_first_delete_path .= " $product_id ";
-					
-					$first_delete_path = false;
-																						
-				}; 
-						
-				
-				
-				
-				$categories = $data->{'categories'};
-				
-				$options = $data->{'options'};
-
-        
-				
-				$attributes= $data->{'attributes'};
-				$filters= $data->{'filters'};
-				$attributes_udal= $data->{'attributes_udal'};
-				$filters_udal= $data->{'filters_udal'};
-				
-							
-				$quantity = $data->{'quantity'};
-				$model = urldecode($this->db->escape($data->{'model'}));
-				$manufacturer_name = urldecode($this->db->escape($data->{'manufacturer_name'}));
-        $manufacturer_image = urldecode($this->db->escape($data->{'manufacturer_image'}));
-        $manufacturer_description = urldecode($this->db->escape($data->{'manufacturer_description'}));
-				$keyword_manufacturer= urldecode($this->db->escape($data->{'keyword_manufacturer'}));
-				$language_id_u= $data->{'language_id_u'};
-				
-				$image = $data->{'image'};
-				$shipping = $data->{'shipping'};
-				$price = trim($data->{'price'});
-				$points = $data->{'points'};
-				$date_added = $data->{'date_added'};
-				$date_modified = $data->{'date_modified'};
-				$date_available = $data->{'date_available'};
-				$weight = (int)$data->{'weight'};
-				$weight_unit = $data->{'weight_unit'};
-				$status = $data->{'status'};
-				$tax_class_id = $data->{'tax_class_id'};
-				$stock_status_id = $data->{'stock_status_id'};
-				
-				$descriptions = $this->object_to_array($data->{'descriptions'});
-					
-				$meta_titles = $this->object_to_array($data->{'meta_titles'});
-
-				$meta_h1s   = $this->object_to_array($data->{'meta_h1'});
-				
-				$meta_descriptions = $this->object_to_array($data->{'meta_descriptions'});
-				
-				$names = $this->object_to_array($data->{'names'});
-				
-				$meta_keywords = $this->object_to_array($data->{'meta_keywords'});
-				$tags = $this->object_to_array($data->{'tags'});
-				
-				$keywords = $this->object_to_array($data->{'seo_keyword'});
-				
-				$length = (int)$data->{'length'};
-				$width = (int)$data->{'width'};
-				$height = (int)$data->{'height'};
-	
-				//$sort_order = $data->{'sort_order'};
-	
-				$measurement_unit = $data->{'measurement_unit'};
-				$sku = urldecode($this->db->escape($data->{'sku'}));
-				$upc = urldecode($this->db->escape($data->{'upc'}));
-	
-				$ean = urldecode($this->db->escape($data->{'ean'}));
-	
-	
-				$jan = urldecode($this->db->escape($data->{'jan'}));
-	
-	
-				$isbn = urldecode($this->db->escape($data->{'isbn'}));
-	
-				$mpn =  urldecode($this->db->escape($data->{'mpn'}));
-        
-        
-        
-        
-        
-
-	
-				$location = urldecode($this->db->escape($data->{'location'}));			
-				
-				$store_ids = $data->{'store_ids'};
-	
-				$related_ids = $data->{'related_ids'};
-	
-				$layout = $data->{'layout'};
-				$subtract = $data->{'subtract'};
-				$minimum = $data->{'minimum'};
-				
-				
-				if (empty($data->{'specials'})) {
-					$specials_empty = true;
-				}else{ 
-					$specials_empty = false;
-					$specials = $data->{'specials'};
-				};
-				
-				if (empty($data->{'akcii'})) {
-					$akcii_empty = true;
-				}else{ 
-					$akcii_empty = false;
-					$akcii = $data->{'akcii'};
-				};
-				
-				//$vozvrat_json[$product['ref']]= $this->storeProductIntoDatabase( $product, $languages, $product_fields, $exist_table_product_tag, $exist_meta_title//, //$layout_ids, $available_store_ids, $manufacturers, $weight_class_ids, $length_class_ids, $url_alias_ids );
-				
-				// extract the product details										
-				$weight_class_id = (isset($weight_class_ids[$weight_unit])) ? $weight_class_ids[$weight_unit] : 0;
-				
-
-				
-				//if (!$this->use_table_seo_url) {
-					//$keyword = $this->db->escape($seo_keyword);
-				//}
-
-				$length_class_id = (isset($length_class_ids[$measurement_unit])) ? $length_class_ids[$measurement_unit] : 0;
-
-				
-				if ($manufacturer_name) {        
-					$this->storeManufacturerIntoDatabase( $manufacturers, $manufacturer_name, $store_ids, $available_store_ids,$keyword_manufacturer,$languages,$language_id_u,$manufacturer_image,$manufacturer_description );
-					$manufacturer_id = $manufacturers[$manufacturer_name]['manufacturer_id'];
-				} else {
-					$manufacturer_id = 0;
-				}
-						
-				if ($i==1) {} else {$sql_product  .=",";};
-				
-				$sql_product  .= "($product_id,$quantity,'$sku','$upc',";
-				$sql_product  .= in_array('ean',$product_fields) ? "'$ean'," : "";
-				$sql_product  .= in_array('jan',$product_fields) ? "'$jan'," : "";
-				$sql_product  .= in_array('isbn',$product_fields) ? "'$isbn'," : "";
-				$sql_product  .= in_array('mpn',$product_fields) ? "'$mpn'," : "";
-				
-        
-
-        
- 
-        $sql_product  .= "'$location','$image',$stock_status_id,'$model',$manufacturer_id,$shipping,$price,$points,";
-				$sql_product  .= "'$date_added',";
-				$sql_product  .= "'$date_modified',";
-				$sql_product  .= "'$date_available',";
-				$sql_product  .= "$weight,$weight_class_id,$status,";
-				$sql_product  .= "$tax_class_id,$length,$width,$height,'$length_class_id','$subtract','$minimum')";
-		
-		
-		
-
-				$store_id = 0;
-				
-				foreach ($languages as $language) {
-					$language_code = $language['code'];
-					$language_id = $language['language_id'];					
-					
-					$name = isset($names[$language_code]) ? urldecode($this->db->escape($names[$language_code])) : '';
-					$description = isset($descriptions[$language_code]) ? urldecode($this->db->escape($descriptions[$language_code])) : '';
-					if ($exist_meta_title) {
-						$meta_title = isset($meta_titles[$language_code]) ? urldecode($this->db->escape($meta_titles[$language_code])) : '';
-					}
-					if ($exist_meta_h1) {
-							$meta_h1 = isset($meta_h1s[$language_code]) ? urldecode($this->db->escape($meta_h1s[$language_code])) : '';
-					}
-					$meta_description = isset($meta_descriptions[$language_code]) ? urldecode($this->db->escape($meta_descriptions[$language_code])) : '';
-					$meta_keyword = isset($meta_keywords[$language_code]) ? urldecode($this->db->escape($meta_keywords[$language_code])) : '';
-					$tag = isset($tags[$language_code]) ? urldecode($this->db->escape($tags[$language_code])) : '';
-					
-					
-					if ($exist_table_product_tag) {
-					
-						$sql_product_description  .= ($first_product_description ) ? "" : ",";
-						if ($exist_meta_title) {
-
-							$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword'";
-
-						} else {
-							
-							$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword'";								
-
-						}
-						if ($exist_meta_h1) {
-							$sql_product_description  .= ", '$meta_h1'";
-						}
-						$sql_product_description  .= ")";
-						
-						if (($seo_update == 1) or ($insert== 1)) {
-							$sql_product_tag  .= ($first_product_tag  ) ? "" : ",";
-							$sql_product_tag  .= " ($product_id, $language_id, '$tag') ";
-
-							$first_product_tag  = false;
-						}
-					} else {
-					
-						$sql_product_description  .= ($first_product_description ) ? "" : ",";
-						if ($exist_meta_title) {
-							
-							$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag' ";							
-
-
-						} else {
-							
-							$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag' " ;
-
-	
-						}
-						if ($exist_meta_h1) {
-							$sql_product_description  .= ", '$meta_h1'";
-						}
-						$sql_product_description  .= ")";
-
-						if(isset($keywords[$language_code]) and (($seo_update == 1) or ($insert== 1))){
-						
-							$keyword= isset($keywords[$language_code]) ? urldecode($this->db->escape($keywords[$language_code])) : '';
-																
-							if (isset($url_alias_ids[$product_id][$store_id][$language_id ])) {										
-										
-										$url_alias_id = $url_alias_ids[$product_id][$store_id][$language_id];
-										
-																
-										$sql_url_aliasUPDATE .= ($first_url_aliasUPDATE  ) ? "" : ",";
-										$sql_url_aliasUPDATE .= " ('$url_alias_id','$keyword','product_id=$product_id',$store_id,$language_id )";
-										$first_url_aliasUPDATE  = false;
-							}else{
-										$sql_url_alias .= ($first_url_alias  ) ? "" : ",";
-										$sql_url_alias .= " ('$keyword','product_id=$product_id',$store_id,$language_id )";
-										$first_url_alias  = false;
-	
-							}
-						}
-
-
-					}
-					$first_product_description = false;
-					
-		 			foreach ($attributes as $attribute_str) {
-					        
-							$attribute_id = $attribute_str->{'attribute_id'};
-							$attribute_lang_id = $attribute_str->{'language'};
-							$text= urldecode($this->db->escape($attribute_str->{'text'}));
-							
-                            if ($language_code == $attribute_lang_id) {
-                                $sql_product_attribute .= ($first_product_attribute ) ? "" : ",";
-                                $first_product_attribute = false;
-                                $sql_product_attribute .= " ($product_id,$attribute_id,$language_id,'$text') ";
-                            }
-					}
-					
-				}
-				foreach ($filters as $filter_str) {
-					
-							$filter_id= $filter_str->{'filter_id'};
-
-							$sql_product_filter .= ($first_product_filter ) ? "" : ",";
-							$first_product_filter = false;
-							$sql_product_filter .= " ($product_id,$filter_id) ";
-				}
-					
-				$countcategories = count($categories);	
-				
-				if ($countcategories > 0) {
-
-					$count_main_category= 1;
-					
-					foreach ($categories as $category_id) {
-					
-						$sql_category_id .= ($first_category_id ) ? "" : ",";
-						
-						//$main_category = ($count_main_category == $countcategories ) ? 1 : 0;
-            $main_category  =  $category_id->{'main'};
-						$category_id_id =  $category_id->{'id'};
-            
-            
-						$sql_category_id .= " ($product_id,$category_id_id) ";
-
-						$first_category_id = false;
-	
-						
-						$count_main_category= $count_main_category + 1;
-					}
-
-				}
-				//if (!$this->use_table_seo_url) {
-				//	if ($keyword) {					
-					
-						//foreach ($store_ids as $store_id) {
-						//	if (in_array((int)$store_id,$available_store_ids)) {
-							
-								//$store_id = 0;
-								
-								//foreach ($keywords as $keyword_struct ) {
-									
-									//$language_id = $keywords['language_id'];
-									
-									
-								//}	
-							//}
-					//	}			
-				//	}
-				//}
-				
-				foreach ($store_ids as $store_id) {
-					if (in_array((int)$store_id,$available_store_ids)) {
-						
-						$sql_product_to_store .= ($firstsql_product_to_store  ) ? "" : ",";
-						$sql_product_to_store .= " ($product_id,$store_id)";
-						$firstsql_product_to_store  = false;
-
-					}
-				}
-				$layouts = array();
-				foreach ($layout as $layout_part) {
-					$next_layout = explode(':',$layout_part);
-					if ($next_layout===false) {
-						$next_layout = array( 0, $layout_part );
-					} else if (count($next_layout)==1) {
-						$next_layout = array( 0, $layout_part );
-					}
-					if ( (count($next_layout)==2) && (in_array((int)$next_layout[0],$available_store_ids)) && (is_string($next_layout[1])) ) {
-						$store_id = (int)$next_layout[0];
-						$layout_name = $next_layout[1];
-						if (isset($layout_ids[$layout_name])) {
-							$layout_id = (int)$layout_ids[$layout_name];
-							if (!isset($layouts[$store_id])) {
-								$layouts[$store_id] = $layout_id;
-							}
-						}
-					}
-				}
-
-				foreach ($layouts as $store_id => $layout_id) {
-					$sql_product_to_layout .= ($first_product_to_layout ) ? "" : ",";
-					$sql_product_to_layout .= " ($product_id,$store_id,$layout_id)";
-					$first_product_to_layout = false;
-				}
-				if (count($related_ids) > 0) {
-					
-					foreach ($related_ids as $related_id) {
-						$sql_product_related .= ($first_product_related ) ? "" : ",";
-						$first_product_related = false;
-						$sql_product_related .= "($product_id,$related_id)";
-					}
-				}
-				
-				if (count($attributes_udal) > 0) {
-				//foreach ($attributes_udal as $attribute_id) {			
-							
-					$sql_del_product_attribute .= ($first_del_product_attribute) ? "" : ",";
-					$first_del_product_attribute= false;
-					$sql_del_product_attribute .= " $product_id ";
-				}
-				
-				if (count($filters_udal) > 0) {
-				//foreach ($attributes_udal as $attribute_id) {			
-							
-					$sql_del_product_filter .= ($first_del_product_filter) ? "" : ",";
-					$first_del_product_filter= false;
-					$sql_del_product_filter .= " $product_id ";
-				}
-
-	
-				
-				if (!empty($type_option)) {
-					
-					if (count($options) == 0) {
-					
-						$sql_delete_product_option .= ($first_delete_product_option ) ? "" : ",";
-						$sql_delete_product_option .= " $product_id ";
-						$first_delete_product_option = false;
-					
-					} else {
-
-						foreach ($options as $option) {
-			
-               $option_id= $option->{'option_id'};
-               
-               if (isset($ProductOption[$product_id][$option_id]) ) {
-               
-                 $option_vid[$option_id] = $ProductOption[$product_id][$option_id];
-               
-               }
-               
-               if ((!isset($ProductOption[$product_id][$option_id])) and (!isset($option_vid[$option_id]))) {
-						
-                    $sql_product_option .= ($first_product_option ) ? "" : ","; 
-    				$sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
-    				$first_product_option = false;
-    							
-    				$product_option_id_t = $product_option_id;
-    							
-    				$product_option_id++;	
-                  
-                    $option_vid[$option_id] = $product_option_id_t;
-                  					
-				} else {
-						
-					$product_option_id_t = $option_vid[$option_id];
-							
-				}
-                
-      
-      
-							$option_value_id= $option->{'option_value_id'};
-							$quantity= $option->{'quantity'};
-							$subtract= $option->{'subtract'};
-							$price= $option->{'price'};
-							$price_prefix= $option->{'price_prefix'};
-							$points= $option->{'points'};
-							$points_prefix= $option->{'points_prefix'};
-							$weight= $option->{'weight'};
-							$weight_prefix= $option->{'weight_prefix'};
-              
-		
-							$sql_product_option_value .= ($first_product_option_value ) ? "" : ",";
-					 
-							$sql_product_option_value .= "  ($product_option_id_t, $product_id, $option_id, $option_value_id ,$quantity,$subtract,$price,'$price_prefix',$points,'$points_prefix', $weight,'$weight_prefix') ";
-							
-							
-							
-							$first_product_option_value = false;
-						}
-					}
-						
-					
-					$sql_del_product_option_value .= ($first_del_product_option_value) ? "" : ",";
-					
-					$sql_del_product_option_value .= " $product_id ";
-					
-					$first_del_product_option_value= false;	 
-				}
-				
-        $sql_delete_product_special .= ($first_delete_product_special ) ? "" : ",";
-				$sql_delete_product_special .= " $product_id ";
-				$first_delete_product_special= false;
-        
-        
-        if (!$specials_empty) {
-				
-					
-
-					
-					if (count($specials) == 0) {
-					} else {
-						foreach ($specials as $special) {
-			
-							$customer_group_id= $special->{'customer_group_id'};
-							$priority= $special->{'priority'};
-							$date_start= $special->{'date_start'};
-							$price= $special->{'price'};
-							$date_end= $special->{'date_end'};
-
-		
-							$sql_product_special .= ($first_product_special ) ? "" : ",";
-					 
-							$sql_product_special .= "  ($product_id, $customer_group_id,  $priority, $price,'$date_start','$date_end') ";
-							
-							
-
-							$first_product_special = false;
-						}
-					}
-				}
-				
-        $sql_delete_product_discount .= ($first_delete_product_discount ) ? "" : ",";
-				$sql_delete_product_discount .= " $product_id ";
-				$first_delete_product_discount= false;
-        
-        
-        
-				if (!$akcii_empty) {
-				
-					
-
-					
-					if (count($akcii) == 0) {
-					} else {
-						foreach ($akcii as $special) {
-			
-							$customer_group_id= $special->{'customer_group_id'};
-							$priority= $special->{'priority'};
-							$date_start= $special->{'date_start'};
-							$price= $special->{'price'};
-							$date_end= $special->{'date_end'};
-							$quantity= $special->{'quantity'};
-
-		
-							$sql_product_discount .= ($first_product_discount ) ? "" : ",";
-					 
-							$sql_product_discount .= "  ($product_id, $customer_group_id, $quantity,  $priority, $price,'$date_start','$date_end') ";
-							
-							
-
-							$first_product_discount = false;
-						}
-					}
-				}
-				
-				$vozvrat_json[$data->{'ref'}]= $product_id;
-			
-
-				$i++;
-			
-			}//перебор переданного массива	
-			}//if				
-			}//while
-
-				//код обновления
-				$sql_productDUPLICATE   .= "`quantity`= VALUES(`quantity`),";
-				$sql_productDUPLICATE   .= "`sku`= VALUES(`sku`),";
-				$sql_productDUPLICATE   .= "`upc`= VALUES(`upc`),";
-								
-				$sql_productDUPLICATE   .= in_array('ean',$product_fields) ? "`ean` = VALUES(`ean`)," : "";
-				$sql_productDUPLICATE   .= in_array('jan',$product_fields) ? "`jan` = VALUES(`jan`)," : "";
-				$sql_productDUPLICATE   .= in_array('isbn',$product_fields) ? "`isbn` = VALUES(`isbn`)," : "";
-				$sql_productDUPLICATE   .= in_array('mpn',$product_fields) ? "`mpn` = VALUES(`mpn`)," : "";
-				
-
-        
-        
-				
-				$sql_productDUPLICATE   .= "`location`= VALUES(`location`),";
-				$sql_productDUPLICATE   .= "`stock_status_id`= VALUES(`stock_status_id`),";
-				$sql_productDUPLICATE   .= "`model`= VALUES(`model`),";
-				$sql_productDUPLICATE   .= "`manufacturer_id`= VALUES(`manufacturer_id`),";
-				$sql_productDUPLICATE   .= "`image`= VALUES(`image`),";
-				$sql_productDUPLICATE   .= "`shipping`= VALUES(`shipping`),";
-				$sql_productDUPLICATE   .= "`price`= VALUES(`price`),";
-				$sql_productDUPLICATE   .= "`points`= VALUES(`points`),";
-
-				$sql_productDUPLICATE   .= "`date_added`= '$date_added',";
-				$sql_productDUPLICATE   .= "`date_modified`= '$date_modified',";
-				$sql_productDUPLICATE   .= "`date_available`= '$date_available',";
-
-				$sql_productDUPLICATE   .= "`weight`= VALUES(`weight`),";
-				$sql_productDUPLICATE   .= "`weight_class_id`= VALUES(`weight_class_id`),";
-				$sql_productDUPLICATE   .= "`status`= VALUES(`status`),";
-				
-				$sql_productDUPLICATE   .= "`tax_class_id`= VALUES(`tax_class_id`),";
-
-				$sql_productDUPLICATE   .= "`length`= VALUES(`length`),";
-				$sql_productDUPLICATE   .= "`width`= VALUES(`width`),";
-				$sql_productDUPLICATE   .= "`height`= VALUES(`height`),";
-				$sql_productDUPLICATE   .= "`length_class_id`= VALUES(`length_class_id`),";
-				//$sql_productDUPLICATE   .= "`sort_order`= VALUES(`sort_order`),";
-				$sql_productDUPLICATE   .= "`subtract`= VALUES(`subtract`),";
-				$sql_productDUPLICATE   .= "`minimum`= VALUES(`minimum`)";
-
-
-				$sql_product  .=$sql_productDUPLICATE;
-			
-			$sql_product  .=";";				
-			$this->db->query($sql_product);
-			
-			if (!$first_delete_product_special ) {
-			
-				$sql_delete_product_special .=");";
-				$this->db->query($sql_delete_product_special );
-				
-				$sql = "Select max(`product_special_id`) as `product_special_id` from `".DB_PREFIX."product_special`;";
-				$result = $this->db->query( $sql );
-				$product_special_id= 0;
-				
-				foreach ($result->rows as $row) {				
-					$product_special_id= (int)$row['product_special_id'];
-					$product_special_id++;
-									
-				}
-				$sql = "ALTER TABLE `".DB_PREFIX."product_special` AUTO_INCREMENT = $product_special_id ;";
-				$this->db->query($sql);
-			}
-			if (!$first_delete_product_discount ) {
-			
-				$sql_delete_product_discount .=");";
-				$this->db->query($sql_delete_product_discount );
-				
-				$sql = "Select max(`product_discount_id`) as `product_discount_id` from `".DB_PREFIX."product_discount`;";
-				$result = $this->db->query( $sql );
-				$product_discount_id= 0;
-				
-				foreach ($result->rows as $row) {				
-					$product_discount_id= (int)$row['product_discount_id'];
-					$product_discount_id++;
-									
-				}
-				$sql = "ALTER TABLE `".DB_PREFIX."product_discount` AUTO_INCREMENT = $product_discount_id;";
-				$this->db->query($sql);
-			}
-			
-			if (!$first_delete_path) {
-			
-				$sql_first_delete_path .=");";
-				$this->db->query($sql_first_delete_path );
-			}
-			
-			if (!$first_delete_product_option) {
-			
-				$sql_delete_product_option .=");";
-				$this->db->query($sql_delete_product_option );
-			}
-			
-			if (!$first_del_product_attribute) {
-			
-				$sql_del_product_attribute .=");";
-				$this->db->query($sql_del_product_attribute );
-			}
-			if (!$first_del_product_filter) {
-			
-				$sql_del_product_filter .=");";
-				$this->db->query($sql_del_product_filter );
-			}
-			if (!$first_product_attribute) {
-			
-				$sql_product_attribute .=";";
-				$this->db->query($sql_product_attribute);
-			}
-			if (!$first_product_filter) {
-			
-				$sql_product_filter .=";";
-				$this->db->query($sql_product_filter);
-			}
-						
-			if (!$first_product_option ) {
-			
-				$sql_product_option .=";";
-				$this->db->query($sql_product_option );
-			}
-			
-
-			
-			if (!$first_del_product_option_value) {
-			
-				$sql_del_product_option_value .=");";
-				$this->db->query($sql_del_product_option_value );
-			}
-			
-			if (!$first_product_option_value ) {
-				
-				$sqlproduct_option_value_id = "Select max(`product_option_value_id`) as `product_option_value_id` from `".DB_PREFIX."product_option_value`;";
-				$resultproduct_option_value = $this->db->query( $sqlproduct_option_value_id );
-				$product_option_idproduct_option_value= 1;
-			
-				foreach ($resultproduct_option_value ->rows as $row) {				
-					$product_option_idproduct_option_value= (int)$row['product_option_value_id'];
-					$product_option_idproduct_option_value++;				
-				}
-				$sqlproduct_option_value_id = "ALTER TABLE `".DB_PREFIX."product_option_value` AUTO_INCREMENT=$product_option_idproduct_option_value;";
-				$this->db->query( $sqlproduct_option_value_id );
-			
-				$sql_product_option_value .=";";
-				$this->db->query($sql_product_option_value );
-			}
-
-							
-			if (!$first_product_special ) {				
-							
-				$sql_product_special .=";";
-				$this->db->query($sql_product_special );				
-			}
-			if (!$first_product_discount ) {				
-							
-				$sql_product_discount .=";";
-				$this->db->query($sql_product_discount );				
-			}
-			
-			if (!$first_product_description ) {
-			
-				$sql_product_descriptionDUPLICATE =" ON DUPLICATE KEY UPDATE  ";
-			
-			
-				if ($exist_table_product_tag) {
-					
-				
-						if ($exist_meta_title) {
-
-								$sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
-								if ($description_update == 1) {
-								  $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                if ($exist_meta_title) {
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description` , '$meta_title', '$meta_description', '$meta_keyword', '$tag')" ;
+                } else {
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`" ;
                 }
-								if (($seo_update == 1) or ($insert== 1)) {
-								
-								
-									$sql_product_descriptionDUPLICATE.= ",`meta_title`= VALUES(`meta_title`),";
-									$sql_product_descriptionDUPLICATE.= "`meta_description`= VALUES(`meta_description`),";
-									$sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`)";
-									
-							}
-						} else {
-																						
-								$sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
-								if ($description_update == 1) {
-								  $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                if ($exist_meta_h1) {
+                    $sql_product_description  .= ", `meta_h1`";
                 }
-								if (($seo_update == 1) or ($insert== 1)) {
-								
-								$sql_product_descriptionDUPLICATE.= ",`meta_description`= VALUES(`meta_description`),";
-								$sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`)";								
-							}
-						}
-										
-						
-					} else {
-					
-
-						if ($exist_meta_title) {														
-							
-								$sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
-								if ($description_update == 1) {
-								  $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                $sql_product_description  .= ") VALUES ";
+                $sql_product_tag  = "INSERT INTO `".DB_PREFIX."product_tag` (`product_id`,`language_id`,`tag`) VALUES " ;
+            } else {
+                if ($exist_meta_title) {
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`" ;
+                } else {
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag`";
                 }
-								if (($seo_update == 1) or ($insert== 1)) {
-								
-								$sql_product_descriptionDUPLICATE.= ",`meta_title`= VALUES(`meta_title`),";
-								$sql_product_descriptionDUPLICATE.= "`meta_description`= VALUES(`meta_description`),";
-								$sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`),";
-								$sql_product_descriptionDUPLICATE.= "`tag`= VALUES(`tag`)";
-														
-}
-
-						} else {														
-							
-								$sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
-								if ($description_update == 1) {
-								  $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                if ($exist_meta_h1) {
+                    $sql_product_description  .= ", `meta_h1`";
                 }
-								if (($seo_update == 1) or ($insert== 1)) {
-								$sql_product_descriptionDUPLICATE.= ",`meta_description`= VALUES(`meta_description`),";
-								$sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`),";
-								$sql_product_descriptionDUPLICATE.= "`tag`= VALUES(`tag`)";
-								}
-						}
+                $sql_product_description  .= ") VALUES ";
+            }
 
 
-				}	
-			
-				if ($exist_meta_h1) {
-					if (($seo_update == 1) or ($insert== 1)) {
-						$sql_product_descriptionDUPLICATE.= ",`meta_h1`= VALUES(`meta_h1`)";
-					}
-				}
-			
-			
-				$sql_product_description  .=$sql_product_descriptionDUPLICATE;
-			
-
-				$sql_product_description  .=";";
-				$this->db->query($sql_product_description  );
-			}
-			
-			if (!$first_product_tag  ) {
-				
-					$sql_product_tag  .=" ON DUPLICATE KEY UPDATE  ";
-					$sql_product_tag  .= "`tag`= VALUES(`tag`)";
-					
-					$sql_product_tag  .=";";
-					$this->db->query($sql_product_tag  );
-				
-			}
-			
-			
-			
-			if (!$first_category_id) {
-				$sql_category_id .=";";
-				$this->db->query($sql_category_id );
-			}
-			
-			if (!$first_url_aliasUPDATE  ) {								
-			
-				$sql_url_aliasUPDATE .=" ON DUPLICATE KEY UPDATE  ";
-				$sql_url_aliasUPDATE .= "`keyword`= VALUES(`keyword`)";
-												
-				$sql_url_aliasUPDATE .=";";
-				$this->db->query($sql_url_aliasUPDATE );
-			}
-			 
-			if (!$first_url_alias  ) {								
-			
-				$sql_url_alias .=";";
-				$this->db->query($sql_url_alias );
-			}
-			
-			if (!$firstsql_product_to_store  ) {
-				
-				$sql_product_to_store .=" ON DUPLICATE KEY UPDATE  ";
-				$sql_product_to_store .= "`store_id`= VALUES(`store_id`)";								
-				$sql_product_to_store .=";";
-				$this->db->query($sql_product_to_store );
-			}
-			
-			if (!$first_product_to_layout ) {
-			
-				$sql_product_to_layout .=";";
-				$this->db->query($sql_product_to_layout );
-			}
-			
-			
-			if (!$first_product_related) {
-			
-				$sql_product_related .=";";
-				$this->db->query($sql_product_related );				
-			}
-
-			$sql = "TRUNCATE TABLE `".DB_PREFIX."category_filter`;";
-			$this->db->query( $sql );
-			
-			$sql = "Select product_to_category.category_id,product_filter.filter_id from `".DB_PREFIX."product_to_category` as product_to_category inner join `".DB_PREFIX."product_filter` as product_filter on product_filter.product_id = product_to_category .product_id GROUP BY product_to_category.category_id,product_filter.filter_id;";
-			
+			$sql = "Select max(`product_option_id`) as `product_option_id` from `".DB_PREFIX."product_option`;";
 			$result = $this->db->query( $sql );
+			$product_option_id = 0;
 
-			$first_category_filter = true;
-			
-			$sql_category_filter = "INSERT INTO `".DB_PREFIX."category_filter` (`category_id`,`filter_id`) VALUES ";
-			
 			foreach ($result->rows as $row) {
-							
-				$category_id= (int)$row['category_id'];
-				$filter_id  = (int)$row['filter_id'];
-
-
-		
-				$sql_category_filter .= ($first_category_filter ) ? "" : ",";
-					 
-				$sql_category_filter .= "  ($category_id, $filter_id ) ";
-				$first_category_filter = false;				
-			}
-			if (!$first_category_filter ) {
-			
-				$sql_category_filter .=";";
-				$this->db->query($sql_category_filter );				
+				$product_option_id = (int)$row['product_option_id'];
+				$product_option_id++;
 			}
 
-			//$json['success'] = $data->{'product_id'};
-//			$product = array();
-			//$product['product_id'] = $data->{'product_id'};
-			//$json['success'] = $product['product_id'];
-			
-			
-			
-			
-			
-			
-			//$vozvrat_json["id".$product['sku']]= 25; 			
-			$json['success'] = $vozvrat_json ;
-			//$json['success'] = $this->use_table_;			
-			//$json['success'] = $product['descriptions'][$languages[0]['language_code']];			
-			//$json['success'] = $obj ->{'foo-bar'};			
-			//$json['success'] = urldecode($this->request->post['products']);
+			$ProductOption = $this->getProductOption();
 
+
+			$pack_number = 1;
+			  	
+            while ($zip_entry = zip_read($zipArc)) {
+
+                if (zip_entry_open($zipArc, $zip_entry, "r")) {
+
+                    $dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
+
+                    $data_array= json_decode($dump);
+
+                    foreach ($data_array as $data){
+
+                        $product_id = $data->{'product_id'};
+
+                        if ($product_id == 0) {
+                            $product_id_max = $product_id_max + 1;
+                            $product_id = $product_id_max;
+                            $insert = 1;
+                        } else {
+                            $insert = 0;
+                            $sql_first_delete_path .= ($first_delete_path ) ? "" : ",";
+                            $sql_first_delete_path .= " $product_id ";
+                            $first_delete_path = false;
+                        }
 						
-			zip_close($zipArc);
-			unlink($nameZip);
-				
-			}													
-		
+                        $categories = $data->{'categories'};
+                        $options = $data->{'options'};
+                        $attributes= $data->{'attributes'};
+                        $filters= $data->{'filters'};
+                        $attributes_udal= $data->{'attributes_udal'};
+                        $filters_udal= $data->{'filters_udal'};
 
-		$this->response->addHeader('Content-Type: application/json');    
-		//$this->response->setCompression(9);
-		$this->response->setOutput(json_encode($json));
-	}
+                        $quantity = $data->{'quantity'};
+                        $model = urldecode($this->db->escape($data->{'model'}));
+                        $manufacturer_name = urldecode($this->db->escape($data->{'manufacturer_name'}));
+                        $manufacturer_image = urldecode($this->db->escape($data->{'manufacturer_image'}));
+                        $manufacturer_description = urldecode($this->db->escape($data->{'manufacturer_description'}));
+                        $keyword_manufacturer= urldecode($this->db->escape($data->{'keyword_manufacturer'}));
+                        $language_id_u= $data->{'language_id_u'};
+
+                        $image = $data->{'image'};
+                        $shipping = $data->{'shipping'};
+                        $price = trim($data->{'price'});
+                        $points = $data->{'points'};
+                        $date_added = $data->{'date_added'};
+                        $date_modified = $data->{'date_modified'};
+                        $date_available = $data->{'date_available'};
+                        $weight = (int)$data->{'weight'};
+                        $weight_unit = $data->{'weight_unit'};
+                        $status = $data->{'status'};
+                        $tax_class_id = $data->{'tax_class_id'};
+                        $stock_status_id = $data->{'stock_status_id'};
+				
+                        $descriptions = $this->object_to_array($data->{'descriptions'});
+                        $meta_titles = $this->object_to_array($data->{'meta_titles'});
+                        $meta_h1s   = $this->object_to_array($data->{'meta_h1'});
+                        $meta_descriptions = $this->object_to_array($data->{'meta_descriptions'});
+                        $names = $this->object_to_array($data->{'names'});
+                        $meta_keywords = $this->object_to_array($data->{'meta_keywords'});
+                        $tags = $this->object_to_array($data->{'tags'});
+                        $keywords = $this->object_to_array($data->{'seo_keyword'});
+				
+                        $length = (int)$data->{'length'};
+                        $width = (int)$data->{'width'};
+                        $height = (int)$data->{'height'};
 	
+				        //$sort_order = $data->{'sort_order'};
+	
+                        $measurement_unit = $data->{'measurement_unit'};
+                        $sku = urldecode($this->db->escape($data->{'sku'}));
+                        $upc = urldecode($this->db->escape($data->{'upc'}));
+                        $ean = urldecode($this->db->escape($data->{'ean'}));
+                        $jan = urldecode($this->db->escape($data->{'jan'}));
+                        $isbn = urldecode($this->db->escape($data->{'isbn'}));
+                        $mpn =  urldecode($this->db->escape($data->{'mpn'}));
+
+                        $location = urldecode($this->db->escape($data->{'location'}));
+                        $store_ids = $data->{'store_ids'};
+                        $related_ids = $data->{'related_ids'};
+
+                        $layout = $data->{'layout'};
+                        $subtract = $data->{'subtract'};
+                        $minimum = $data->{'minimum'};
+
+                        if (empty($data->{'specials'})) {
+                            $specials_empty = true;
+                        }else{
+                            $specials_empty = false;
+                            $specials = $data->{'specials'};
+                        }
+
+                        if (empty($data->{'akcii'})) {
+                            $akcii_empty = true;
+                        }else{
+                            $akcii_empty = false;
+                            $akcii = $data->{'akcii'};
+                        }
+				
+                        // extract the product details
+                        $weight_class_id = (isset($weight_class_ids[$weight_unit])) ? $weight_class_ids[$weight_unit] : 0;
+                        $length_class_id = (isset($length_class_ids[$measurement_unit])) ? $length_class_ids[$measurement_unit] : 0;
+
+                        if ($manufacturer_name) {
+                            $this->storeManufacturerIntoDatabase( $manufacturers, $manufacturer_name, $store_ids, $available_store_ids,$keyword_manufacturer,$languages,$language_id_u,$manufacturer_image,$manufacturer_description );
+                            $manufacturer_id = $manufacturers[$manufacturer_name]['manufacturer_id'];
+                        } else {
+                            $manufacturer_id = 0;
+                        }
+
+                        if ($pack_number > 1) {
+                            $sql_product  .=",";
+                        }
+				
+                        $sql_product  .= "($product_id,$quantity,'$sku','$upc',";
+                        $sql_product  .= in_array('ean',$product_fields) ? "'$ean'," : "";
+                        $sql_product  .= in_array('jan',$product_fields) ? "'$jan'," : "";
+                        $sql_product  .= in_array('isbn',$product_fields) ? "'$isbn'," : "";
+                        $sql_product  .= in_array('mpn',$product_fields) ? "'$mpn'," : "";
+
+                        $sql_product  .= "'$location','$image',$stock_status_id,'$model',$manufacturer_id,$shipping,$price,$points,";
+                        $sql_product  .= "'$date_added',";
+                        $sql_product  .= "'$date_modified',";
+                        $sql_product  .= "'$date_available',";
+                        $sql_product  .= "$weight,$weight_class_id,$status,";
+                        $sql_product  .= "$tax_class_id,$length,$width,$height,'$length_class_id','$subtract','$minimum')";
+
+
+                        $store_id = 0;
+
+                        foreach ($languages as $language) {
+
+                            $language_code = $language['code'];
+                            $language_id = $language['language_id'];
+
+                            $name = isset($names[$language_code]) ? urldecode($this->db->escape($names[$language_code])) : '';
+                            $description = isset($descriptions[$language_code]) ? urldecode($this->db->escape($descriptions[$language_code])) : '';
+                            if ($exist_meta_title) {
+                                $meta_title = isset($meta_titles[$language_code]) ? urldecode($this->db->escape($meta_titles[$language_code])) : '';
+                            }
+                            if ($exist_meta_h1) {
+                                $meta_h1 = isset($meta_h1s[$language_code]) ? urldecode($this->db->escape($meta_h1s[$language_code])) : '';
+                            }
+                            $meta_description = isset($meta_descriptions[$language_code]) ? urldecode($this->db->escape($meta_descriptions[$language_code])) : '';
+                            $meta_keyword = isset($meta_keywords[$language_code]) ? urldecode($this->db->escape($meta_keywords[$language_code])) : '';
+                            $tag = isset($tags[$language_code]) ? urldecode($this->db->escape($tags[$language_code])) : '';
+					
+					        if ($exist_table_product_tag) {
+					
+                                $sql_product_description  .= ($first_product_description ) ? "" : ",";
+                                if ($exist_meta_title) {
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword'";
+                                } else {
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword'";
+                                }
+                                if ($exist_meta_h1) {
+                                    $sql_product_description  .= ", '$meta_h1'";
+                                }
+                                $sql_product_description  .= ")";
+						
+                                if (($seo_update == 1) or ($insert== 1)) {
+                                    $sql_product_tag  .= ($first_product_tag  ) ? "" : ",";
+                                    $sql_product_tag  .= " ($product_id, $language_id, '$tag') ";
+                                    $first_product_tag  = false;
+                                }
+
+					        } else {
+					
+                                $sql_product_description  .= ($first_product_description ) ? "" : ",";
+                                if ($exist_meta_title) {
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag' ";
+                                } else {
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag' " ;
+                                }
+                                if ($exist_meta_h1) {
+                                    $sql_product_description  .= ", '$meta_h1'";
+                                }
+                                $sql_product_description  .= ")";
+
+                                if(isset($keywords[$language_code]) and (($seo_update == 1) or ($insert== 1))){
+                                    $keyword= isset($keywords[$language_code]) ? urldecode($this->db->escape($keywords[$language_code])) : '';
+                                    if (isset($url_alias_ids[$product_id][$store_id][$language_id ])) {
+                                        $url_alias_id = $url_alias_ids[$product_id][$store_id][$language_id];
+                                        $sql_url_aliasUPDATE .= ($first_url_aliasUPDATE  ) ? "" : ",";
+                                        $sql_url_aliasUPDATE .= " ('$url_alias_id','$keyword','product_id=$product_id',$store_id,$language_id )";
+                                        $first_url_aliasUPDATE  = false;
+                                    }else{
+                                        $sql_url_alias .= ($first_url_alias  ) ? "" : ",";
+                                        $sql_url_alias .= " ('$keyword','product_id=$product_id',$store_id,$language_id )";
+                                        $first_url_alias  = false;
+                                    }
+                                }
+                            } //if ($exist_table_product_tag)
+
+					        $first_product_description = false;
+					
+                            foreach ($attributes as $attribute_str) {
+                                $attribute_id = $attribute_str->{'attribute_id'};
+                                $attribute_lang_id = $attribute_str->{'language'};
+                                $text = urldecode($this->db->escape($attribute_str->{'text'}));
+                                if ($language_code == $attribute_lang_id) {
+                                    $sql_product_attribute .= ($first_product_attribute ) ? "" : ",";
+                                    $first_product_attribute = false;
+                                    $sql_product_attribute .= " ($product_id,$attribute_id,$language_id,'$text') ";
+                                }
+                            }
+
+                        } //foreach ($languages as $language)
+
+                        foreach ($filters as $filter_str) {
+                            $filter_id= $filter_str->{'filter_id'};
+                            $sql_product_filter .= ($first_product_filter ) ? "" : ",";
+                            $first_product_filter = false;
+                            $sql_product_filter .= " ($product_id,$filter_id) ";
+                        }
+					
+                        $countcategories = count($categories);
+                        if ($countcategories > 0) {
+                            $count_main_category = 1;
+                            foreach ($categories as $category_id) {
+                                $sql_category_id .= ($first_category_id ) ? "" : ",";
+                                $main_category  =  $category_id->{'main'};
+                                $category_id_id =  $category_id->{'id'};
+                                $sql_category_id .= " ($product_id,$category_id_id) ";
+                                $first_category_id = false;
+                                $count_main_category = $count_main_category + 1;
+                            }
+                        }
+
+                        foreach ($store_ids as $store_id) {
+                            if (in_array((int)$store_id,$available_store_ids)) {
+                                $sql_product_to_store .= ($firstsql_product_to_store  ) ? "" : ",";
+                                $sql_product_to_store .= " ($product_id,$store_id)";
+                                $firstsql_product_to_store  = false;
+                            }
+                        }
+
+                        $layouts = array();
+                        foreach ($layout as $layout_part) {
+                            $next_layout = explode(':',$layout_part);
+                            if ($next_layout===false) {
+                                $next_layout = array( 0, $layout_part );
+                            } else if (count($next_layout)==1) {
+                                $next_layout = array( 0, $layout_part );
+                            }
+                            if ( (count($next_layout)==2) && (in_array((int)$next_layout[0],$available_store_ids)) && (is_string($next_layout[1])) ) {
+                                $store_id = (int)$next_layout[0];
+                                $layout_name = $next_layout[1];
+                                if (isset($layout_ids[$layout_name])) {
+                                    $layout_id = (int)$layout_ids[$layout_name];
+                                    if (!isset($layouts[$store_id])) {
+                                        $layouts[$store_id] = $layout_id;
+                                    }
+                                }
+                            }
+                        }
+
+                        foreach ($layouts as $store_id => $layout_id) {
+                            $sql_product_to_layout .= ($first_product_to_layout ) ? "" : ",";
+                            $sql_product_to_layout .= " ($product_id,$store_id,$layout_id)";
+                            $first_product_to_layout = false;
+                        }
+
+                        if (count($related_ids) > 0) {
+                            foreach ($related_ids as $related_id) {
+                                $sql_product_related .= ($first_product_related ) ? "" : ",";
+                                $first_product_related = false;
+                                $sql_product_related .= "($product_id,$related_id)";
+                            }
+                        }
+
+                        if (count($attributes_udal) > 0) {
+                            $sql_del_product_attribute .= ($first_del_product_attribute) ? "" : ",";
+                            $first_del_product_attribute= false;
+                            $sql_del_product_attribute .= " $product_id ";
+                        }
+
+                        if (count($filters_udal) > 0) {
+                            $sql_del_product_filter .= ($first_del_product_filter) ? "" : ",";
+                            $first_del_product_filter= false;
+                            $sql_del_product_filter .= " $product_id ";
+                        }
+
+                        if (!empty($type_option)) {
+                            if (count($options) == 0) {
+                                $sql_delete_product_option .= ($first_delete_product_option ) ? "" : ",";
+                                $sql_delete_product_option .= " $product_id ";
+                                $first_delete_product_option = false;
+                            } else {
+
+                                $option_id = 0;
+                                $option_vid = array();
+
+                                foreach ($options as $option) {
+                                    $option_id = $option->{'option_id'};
+                                    if (isset($ProductOption[$product_id][$option_id]) ) {
+                                        $option_vid[$option_id] = $ProductOption[$product_id][$option_id];
+                                    }
+
+                                    if ((!isset($ProductOption[$product_id][$option_id])) and (!isset($option_vid[$option_id]))) {
+                                        $sql_product_option .= ($first_product_option ) ? "" : ",";
+                                        $sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
+                                        $first_product_option = false;
+                                        $product_option_id_t = $product_option_id;
+                                        $product_option_id++;
+                                        $option_vid[$option_id] = $product_option_id_t;
+                                    } else {
+                                        $product_option_id_t = $option_vid[$option_id];
+                                    }
+
+                                    $option_value_id = $option->{'option_value_id'};
+                                    $quantity = $option->{'quantity'};
+                                    $subtract = $option->{'subtract'};
+                                    $price = $option->{'price'};
+                                    $price_prefix = $option->{'price_prefix'};
+                                    $points = $option->{'points'};
+                                    $points_prefix = $option->{'points_prefix'};
+                                    $weight = $option->{'weight'};
+                                    $weight_prefix = $option->{'weight_prefix'};
+
+                                    $sql_product_option_value .= ($first_product_option_value ) ? "" : ",";
+                                    $sql_product_option_value .= "  ($product_option_id_t, $product_id, $option_id, $option_value_id ,$quantity,$subtract,$price,'$price_prefix',$points,'$points_prefix', $weight,'$weight_prefix') ";
+
+                                    $first_product_option_value = false;
+                                } //foreach ($options as $option)
+                            } //(count($options) == 0)
+
+                            $sql_del_product_option_value .= ($first_del_product_option_value) ? "" : ",";
+                            $sql_del_product_option_value .= " $product_id ";
+                            $first_del_product_option_value= false;
+
+                        } //if (!empty($type_option))
+
+                        $sql_delete_product_special .= ($first_delete_product_special ) ? "" : ",";
+                        $sql_delete_product_special .= " $product_id ";
+                        $first_delete_product_special= false;
+        
+                        if (!$specials_empty) {
+                            if (count($specials) > 0) {
+                                foreach ($specials as $special) {
+                                    $customer_group_id= $special->{'customer_group_id'};
+                                    $priority= $special->{'priority'};
+                                    $date_start= $special->{'date_start'};
+                                    $price= $special->{'price'};
+                                    $date_end= $special->{'date_end'};
+
+                                    $sql_product_special .= ($first_product_special ) ? "" : ",";
+                                    $sql_product_special .= "  ($product_id, $customer_group_id,  $priority, $price,'$date_start','$date_end') ";
+
+                                    $first_product_special = false;
+                                }
+                            }
+                        }
+
+                        $sql_delete_product_discount .= ($first_delete_product_discount ) ? "" : ",";
+                        $sql_delete_product_discount .= " $product_id ";
+                        $first_delete_product_discount= false;
+        
+                        if (!$akcii_empty) {
+                            if (count($akcii) > 0) {
+                                foreach ($akcii as $special) {
+                                    $customer_group_id= $special->{'customer_group_id'};
+                                    $priority= $special->{'priority'};
+                                    $date_start= $special->{'date_start'};
+                                    $price= $special->{'price'};
+                                    $date_end= $special->{'date_end'};
+                                    $quantity= $special->{'quantity'};
+
+                                    $sql_product_discount .= ($first_product_discount ) ? "" : ",";
+                                    $sql_product_discount .= "  ($product_id, $customer_group_id, $quantity,  $priority, $price,'$date_start','$date_end') ";
+
+                                    $first_product_discount = false;
+                                }
+                            }
+                        }
+
+                        $vozvrat_json[$data->{'ref'}] = $product_id;
+                        $pack_number++;
+
+                    } //foreach ($data_array as $data)
+                } //if (zip_entry_open($zipArc, $zip_entry, "r"))
+            } //while ($zip_entry = zip_read($zipArc))
+
+            //код обновления
+            $sql_productDUPLICATE   .= "`quantity`= VALUES(`quantity`),";
+            $sql_productDUPLICATE   .= "`sku`= VALUES(`sku`),";
+            $sql_productDUPLICATE   .= "`upc`= VALUES(`upc`),";
+
+            $sql_productDUPLICATE   .= in_array('ean',$product_fields) ? "`ean` = VALUES(`ean`)," : "";
+            $sql_productDUPLICATE   .= in_array('jan',$product_fields) ? "`jan` = VALUES(`jan`)," : "";
+            $sql_productDUPLICATE   .= in_array('isbn',$product_fields) ? "`isbn` = VALUES(`isbn`)," : "";
+            $sql_productDUPLICATE   .= in_array('mpn',$product_fields) ? "`mpn` = VALUES(`mpn`)," : "";
+
+            $sql_productDUPLICATE   .= "`location`= VALUES(`location`),";
+            $sql_productDUPLICATE   .= "`stock_status_id`= VALUES(`stock_status_id`),";
+            $sql_productDUPLICATE   .= "`model`= VALUES(`model`),";
+            $sql_productDUPLICATE   .= "`manufacturer_id`= VALUES(`manufacturer_id`),";
+            $sql_productDUPLICATE   .= "`image`= VALUES(`image`),";
+            $sql_productDUPLICATE   .= "`shipping`= VALUES(`shipping`),";
+            $sql_productDUPLICATE   .= "`price`= VALUES(`price`),";
+            $sql_productDUPLICATE   .= "`points`= VALUES(`points`),";
+
+            $sql_productDUPLICATE   .= "`date_added`= '$date_added',";
+            $sql_productDUPLICATE   .= "`date_modified`= '$date_modified',";
+            $sql_productDUPLICATE   .= "`date_available`= '$date_available',";
+
+            $sql_productDUPLICATE   .= "`weight`= VALUES(`weight`),";
+            $sql_productDUPLICATE   .= "`weight_class_id`= VALUES(`weight_class_id`),";
+            $sql_productDUPLICATE   .= "`status`= VALUES(`status`),";
+            $sql_productDUPLICATE   .= "`tax_class_id`= VALUES(`tax_class_id`),";
+            $sql_productDUPLICATE   .= "`length`= VALUES(`length`),";
+            $sql_productDUPLICATE   .= "`width`= VALUES(`width`),";
+            $sql_productDUPLICATE   .= "`height`= VALUES(`height`),";
+            $sql_productDUPLICATE   .= "`length_class_id`= VALUES(`length_class_id`),";
+            //$sql_productDUPLICATE   .= "`sort_order`= VALUES(`sort_order`),";
+            $sql_productDUPLICATE   .= "`subtract`= VALUES(`subtract`),";
+            $sql_productDUPLICATE   .= "`minimum`= VALUES(`minimum`)";
+
+            $sql_product  .=$sql_productDUPLICATE;
+
+            $sql_product  .=";";
+            $this->db->query($sql_product);
+
+            if (!$first_delete_product_special ) {
+                $sql_delete_product_special .=");";
+                $this->db->query($sql_delete_product_special );
+
+                $sql = "Select max(`product_special_id`) as `product_special_id` from `".DB_PREFIX."product_special`;";
+                $result = $this->db->query( $sql );
+                $product_special_id= 0;
+
+                foreach ($result->rows as $row) {
+                    $product_special_id= (int)$row['product_special_id'];
+                    $product_special_id++;
+                }
+
+                $sql = "ALTER TABLE `".DB_PREFIX."product_special` AUTO_INCREMENT = $product_special_id ;";
+                $this->db->query($sql);
+            }
+
+            if (!$first_delete_product_discount ) {
+
+                $sql_delete_product_discount .=");";
+                $this->db->query($sql_delete_product_discount );
+
+                $sql = "Select max(`product_discount_id`) as `product_discount_id` from `".DB_PREFIX."product_discount`;";
+                $result = $this->db->query( $sql );
+                $product_discount_id= 0;
+
+                foreach ($result->rows as $row) {
+                    $product_discount_id= (int)$row['product_discount_id'];
+                    $product_discount_id++;
+                }
+
+                $sql = "ALTER TABLE `".DB_PREFIX."product_discount` AUTO_INCREMENT = $product_discount_id;";
+                $this->db->query($sql);
+            }
+
+            if (!$first_delete_path) {
+                $sql_first_delete_path .=");";
+                $this->db->query($sql_first_delete_path );
+            }
+
+            if (!$first_delete_product_option) {
+                $sql_delete_product_option .=");";
+                $this->db->query($sql_delete_product_option );
+            }
+
+            if (!$first_del_product_attribute) {
+                $sql_del_product_attribute .=");";
+                $this->db->query($sql_del_product_attribute );
+            }
+
+            if (!$first_del_product_filter) {
+                $sql_del_product_filter .=");";
+                $this->db->query($sql_del_product_filter );
+            }
+
+            if (!$first_product_attribute) {
+                $sql_product_attribute .=";";
+                $this->db->query($sql_product_attribute);
+            }
+
+            if (!$first_product_filter) {
+                $sql_product_filter .=";";
+                $this->db->query($sql_product_filter);
+            }
+
+            if (!$first_product_option ) {
+                $sql_product_option .=";";
+                $this->db->query($sql_product_option );
+            }
+
+            if (!$first_del_product_option_value) {
+                $sql_del_product_option_value .=");";
+                $this->db->query($sql_del_product_option_value );
+            }
+
+            if (!$first_product_option_value ) {
+                $sqlproduct_option_value_id = "Select max(`product_option_value_id`) as `product_option_value_id` from `".DB_PREFIX."product_option_value`;";
+                $resultproduct_option_value = $this->db->query( $sqlproduct_option_value_id );
+                $product_option_idproduct_option_value = 1;
+
+                foreach ($resultproduct_option_value ->rows as $row) {
+                    $product_option_idproduct_option_value = (int)$row['product_option_value_id'];
+                    $product_option_idproduct_option_value++;
+                }
+                $sqlproduct_option_value_id = "ALTER TABLE `".DB_PREFIX."product_option_value` AUTO_INCREMENT=$product_option_idproduct_option_value;";
+                $this->db->query($sqlproduct_option_value_id);
+
+                $sql_product_option_value .=";";
+                $this->db->query($sql_product_option_value);
+            }
+
+            if (!$first_product_special ) {
+                $sql_product_special .=";";
+                $this->db->query($sql_product_special );
+            }
+
+            if (!$first_product_discount ) {
+                $sql_product_discount .=";";
+                $this->db->query($sql_product_discount );
+            }
+
+            if (!$first_product_description ) {
+                $sql_product_descriptionDUPLICATE =" ON DUPLICATE KEY UPDATE  ";
+                if ($exist_table_product_tag) {
+                    if ($exist_meta_title) {
+                        $sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
+                        if ($description_update == 1) {
+                            $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                        }
+                        if (($seo_update == 1) or ($insert== 1)) {
+                            $sql_product_descriptionDUPLICATE.= ",`meta_title`= VALUES(`meta_title`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_description`= VALUES(`meta_description`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`)";
+                        }
+                    } else {
+                        $sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
+                        if ($description_update == 1) {
+                            $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                        }
+                        if (($seo_update == 1) or ($insert== 1)) {
+                            $sql_product_descriptionDUPLICATE.= ",`meta_description`= VALUES(`meta_description`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`)";
+                        }
+                    }
+                } else {
+                    if ($exist_meta_title) {
+                        $sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
+                        if ($description_update == 1) {
+                            $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                        }
+                        if (($seo_update == 1) or ($insert== 1)) {
+                            $sql_product_descriptionDUPLICATE.= ",`meta_title`= VALUES(`meta_title`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_description`= VALUES(`meta_description`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`),";
+                            $sql_product_descriptionDUPLICATE.= "`tag`= VALUES(`tag`)";
+                        }
+                    } else {
+                        $sql_product_descriptionDUPLICATE.= "`name`= VALUES(`name`)";
+                        if ($description_update == 1) {
+                            $sql_product_descriptionDUPLICATE.= ",`description`= VALUES(`description`)";
+                        }
+                        if (($seo_update == 1) or ($insert== 1)) {
+                            $sql_product_descriptionDUPLICATE.= ",`meta_description`= VALUES(`meta_description`),";
+                            $sql_product_descriptionDUPLICATE.= "`meta_keyword`= VALUES(`meta_keyword`),";
+                            $sql_product_descriptionDUPLICATE.= "`tag`= VALUES(`tag`)";
+                        }
+                    }
+                }
+                if ($exist_meta_h1) {
+                    if (($seo_update == 1) or ($insert== 1)) {
+                        $sql_product_descriptionDUPLICATE.= ",`meta_h1`= VALUES(`meta_h1`)";
+                    }
+                }
+                $sql_product_description  .=$sql_product_descriptionDUPLICATE;
+                $sql_product_description  .=";";
+                $this->db->query($sql_product_description  );
+            }
+
+            if (!$first_product_tag  ) {
+                $sql_product_tag  .=" ON DUPLICATE KEY UPDATE  ";
+                $sql_product_tag  .= "`tag`= VALUES(`tag`)";
+                $sql_product_tag  .=";";
+                $this->db->query($sql_product_tag  );
+            }
+
+            if (!$first_category_id) {
+                $sql_category_id .=";";
+                $this->db->query($sql_category_id );
+            }
+
+            if (!$first_url_aliasUPDATE  ) {
+                $sql_url_aliasUPDATE .=" ON DUPLICATE KEY UPDATE  ";
+                $sql_url_aliasUPDATE .= "`keyword`= VALUES(`keyword`)";
+                $sql_url_aliasUPDATE .=";";
+                $this->db->query($sql_url_aliasUPDATE );
+            }
+
+            if (!$first_url_alias  ) {
+                $sql_url_alias .=";";
+                $this->db->query($sql_url_alias );
+            }
+
+            if (!$firstsql_product_to_store  ) {
+                $sql_product_to_store .=" ON DUPLICATE KEY UPDATE  ";
+                $sql_product_to_store .= "`store_id`= VALUES(`store_id`)";
+                $sql_product_to_store .=";";
+                $this->db->query($sql_product_to_store );
+            }
+
+            if (!$first_product_to_layout ) {
+                $sql_product_to_layout .=";";
+                $this->db->query($sql_product_to_layout );
+            }
+
+            if (!$first_product_related) {
+                $sql_product_related .=";";
+                $this->db->query($sql_product_related );
+            }
+
+
+            $sql = "TRUNCATE TABLE `".DB_PREFIX."category_filter`;";
+            $this->db->query( $sql );
+
+            $sql = "Select product_to_category.category_id,product_filter.filter_id from `".DB_PREFIX."product_to_category` as product_to_category inner join `".DB_PREFIX."product_filter` as product_filter on product_filter.product_id = product_to_category .product_id GROUP BY product_to_category.category_id,product_filter.filter_id;";
+            $result = $this->db->query( $sql );
+
+            $first_category_filter = true;
+
+            $sql_category_filter = "INSERT INTO `".DB_PREFIX."category_filter` (`category_id`,`filter_id`) VALUES ";
+
+            foreach ($result->rows as $row) {
+                $category_id= (int)$row['category_id'];
+                $filter_id  = (int)$row['filter_id'];
+
+                $sql_category_filter .= ($first_category_filter ) ? "" : ",";
+                $sql_category_filter .= "  ($category_id, $filter_id ) ";
+                $first_category_filter = false;
+            }
+
+            if (!$first_category_filter ) {
+                $sql_category_filter .=";";
+                $this->db->query($sql_category_filter );
+            }
+
+
+            $json['success'] = $vozvrat_json ;
+
+            zip_close($zipArc);
+            unlink($nameZip);
+
+        }//if (is_resource($zipArc))
+
+        $this->response->addHeader('Content-Type: application/json');
+        $this->response->setOutput(json_encode($json));
+
+    }//function add()
+
+
 	protected function object_to_array($data)				
 	{
     			if (is_array($data) || is_object($data))
