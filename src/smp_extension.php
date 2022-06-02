@@ -325,24 +325,12 @@ class Controllerapismpextension extends Controller {
 		
 	}
 
-	/* Получение списка статусов для заказов покупателей
-	*/
-	public function get_order_statuses() {
+	public function get_status() {
 		
 		$this->load->language('api/get_status');
 
-		$lang_code = $this->request->get['lang'];
-		$lang_id = 1;
-		
-		if (!is_null($lang_code)) {
-			$lang_query = $this->db->query("SELECT language_id FROM `" .DB_PREFIX."language` WHERE code = '" . $lang_code . "'");
-			foreach ($lang_query->rows as $l_row) {
-				$lang_id = $l_row['language_id'];
-			}
-		}
-
 		$json = array();
-		$query = $this->db->query( "SELECT order_status_id, name FROM `".DB_PREFIX."order_status` WHERE language_id = $lang_id ORDER BY order_status_id ASC");
+		$query = $this->db->query( "SELECT * FROM `".DB_PREFIX."order_status`" );
 		$json['success'] = $query->rows ;
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
@@ -1581,65 +1569,64 @@ class Controllerapismpextension extends Controller {
 
 		$json = array();
 
-		$image_f=  file_get_contents('php://input');
-		$nameZip = DIR_CACHE . $this->request->get['nameZip'].'.zip';
+		$order_id = (int)$this->request->get['order_id'];
+		$order_status_id = (int)$this->request->get['order_status_id'];
+
+		$sql_order_check = "SELECT * FROM `" .DB_PREFIX. "order` WHERE order_id = $order_id";
+		$query = $this->db->query($sql_order_check);
+		$rows = $query->rows;
+		if (count($rows) == 0) {
 			
-		file_put_contents($nameZip, $image_f);
-		$zipArc = zip_open($nameZip);
-			
-		if (is_resource($zipArc)) {
-			
-			$first_order_history = true;
-			$sql_order_history = "INSERT INTO `".DB_PREFIX."order_history` (`order_id`,`order_status_id`,`date_added`) VALUES ";
-				
-			$first_order = true;
-			$sql_order = "INSERT INTO `".DB_PREFIX."order` (`order_id`,`order_status_id`) VALUES ";
-			
-			while ($zip_entry = zip_read($zipArc)) {
-			  	
-				if (zip_entry_open($zipArc, $zip_entry, "r")) {
-			  			
-			  		$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-			  			
-					$order_id_array = json_decode($dump);
-		
-					foreach ($order_id_array as $parent) {
-			
-						$order_id = $parent->{'order_id'};
-						$order_status_id = $parent->{'order_status_id'};				
-			
-						$sql_order_history .= ($first_order_history ) ? "" : ",";
-						$sql_order_history .= " ( $order_id,$order_status_id, NOW()) ";
-						$first_order_history = false;
-				
-						$sql_order .= ($first_order ) ? "" : ",";
-						$sql_order .= " ( $order_id,$order_status_id) ";
-						$first_order = false;
-					}
-				}
-			}
-			
-			if (!$first_order) {
-			
-				$sql_order .=" ON DUPLICATE KEY UPDATE  ";
-				$sql_order .= "`order_status_id`= VALUES(`order_status_id`)";
-				$sql_order .=";";
-				$this->db->query($sql_order );
-			}
-			
-			if (!$first_order_history ) {
-				$sql_order_history .=";";
-				$this->db->query($sql_order_history );
-			}
-			
-			zip_close($zipArc);
-			unlink($nameZip);
-			$json['success'] = 'update_order_status complete' ;
-		
+			$json['error'] = "Unable to update order status: order №$order_id not found on the site";
+
 		} else {
-			$json['error']   = 'zip not archive' ;				
+
+			$sql_status_check = "SELECT order_status_id FROM `" .DB_PREFIX. "order_status` WHERE order_status_id = $order_status_id";
+			$query = $this->db->query($sql_status_check);
+			$rows = $query->rows;
+
+			if (count($rows) == 0) {
+				
+				$json['error'] = "Unable to update status for order №$order_id: order status id $order_status_id not found on the site";
+
+			} else {
+				
+				$sql_upd_order = "UPDATE `" . DB_PREFIX . "order` SET order_status_id = $order_status_id, date_modified = NOW() WHERE order_id = $order_id";
+				$this->db->query($sql_upd_order);
+
+				$sql_add_order_history = "INSERT INTO `" .DB_PREFIX. "order_history` (`order_id`,`order_status_id`,`date_added`) VALUES ($order_id, $order_status_id, NOW())";
+				$this->db->query($sql_add_order_history);
+
+				$json['success'] = "Status for order №$order_id updated successfully.";
+
+			}
+				
 		}
-			
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+		
+	}
+
+	/* Получение списка статусов для заказов покупателей
+	*/
+	public function get_order_statuses() {
+		
+		$this->load->language('api/get_status');
+
+		$lang_code = $this->request->get['lang'];
+		$lang_id = 1;
+		
+		if (!is_null($lang_code)) {
+			$lang_query = $this->db->query("SELECT language_id FROM `" .DB_PREFIX."language` WHERE code = '" . $lang_code . "'");
+			foreach ($lang_query->rows as $l_row) {
+				$lang_id = $l_row['language_id'];
+			}
+		}
+
+		$json = array();
+		$query = $this->db->query( "SELECT order_status_id, name FROM `".DB_PREFIX."order_status` WHERE language_id = $lang_id ORDER BY order_status_id ASC");
+		$json['success'] = $query->rows ;
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($json));
 		
@@ -1797,6 +1784,17 @@ class Controllerapismpextension extends Controller {
 			$order_data = $this->object_to_array($row);
 			$products_list = $this->GetOrderProducts($order_id);
 			$order_data['products_list'] = $products_list;
+			
+			$payment_code = $row['payment_code'];
+			$payment_details = null;
+			
+			if ($payment_code == "lqp") {
+				
+				$payment_details = $this->GetOrderPaymentDetails($order_id);
+
+			} 
+			
+			$order_data['payment_details'] = $payment_details;
 			$data_array[] = $order_data;
 
 		}
@@ -1880,6 +1878,84 @@ class Controllerapismpextension extends Controller {
 
 	}
 
+	protected function GetOrderPaymentDetails($order_id)
+	{
+		
+		$sql_payment_details = "SELECT * FROM `" .DB_PREFIX . "lqp_list` WHERE order_id = $order_id";
+		$query = $this->db->query($sql_payment_details);
+		$rows = $query->rows;
+
+		if (count($rows) == 0) {
+			return null;
+		} else {
+			return $rows;
+		}
+
+	}
+
+	public function get_order() {
+		
+		$this->load->language('api/get_order');
+    	$type_option  = $this->request->get['type_option'];
+
+		$json = array();
+		
+		$param = (int)$this->request->post['param'];
+		$param2 = $this->request->post['param2'];
+		$param3 = $this->request->post['param3'];
+
+		$sql = "SELECT order_table.order_id, order_table.invoice_no, order_table.invoice_prefix, order_table.store_id, order_table.store_name, order_table.store_url, order_table.customer_id, order_table.customer_group_id, order_table.firstname, order_table.lastname, order_table.email, order_table.telephone, order_table.fax, order_table.custom_field, order_table.payment_firstname, order_table.payment_lastname, order_table.payment_company, order_table.payment_address_1, order_table.payment_address_2, order_table.payment_city, order_table.payment_postcode, order_table.payment_country, order_table.payment_country_id, order_table.payment_zone, order_table.payment_zone_id, order_table.payment_address_format, order_table.payment_custom_field, order_table.payment_method, order_table.payment_code, order_table.shipping_firstname, order_table.shipping_lastname, order_table.shipping_company, order_table.shipping_address_1, order_table.shipping_address_2, order_table.shipping_city, order_table.shipping_postcode, order_table.shipping_country, order_table.shipping_country_id, order_table.shipping_zone, order_table.shipping_zone_id, order_table.shipping_address_format, order_table.shipping_custom_field, order_table.shipping_method, order_table.shipping_code, order_table.comment, order_table.total, order_table.order_status_id, order_table.affiliate_id, order_table.commission, order_table.marketing_id , order_table.date_added, order_table.date_modified,order_product.product_id ,product_option_value_table.option_value_id,order_product.quantity,order_product.price,order_product.total,order_total_table.title as title_ship,	sum(IFNULL(order_total_table.value,0)) + sum(IFNULL(order_total_bbcod.value,0)) as value_ship,sum(customer_reward_table.points) FROM `".DB_PREFIX."order` as order_table ";
+		$sql .= " LEFT JOIN `".DB_PREFIX."order_product` as order_product on order_product.order_id = order_table.order_id ";
+		$sql .= " LEFT JOIN `".DB_PREFIX."order_option` as order_option_table on order_option_table.order_id = order_product.order_id and order_option_table.order_product_id = order_product.order_product_id ";
+		$sql .= " LEFT JOIN `".DB_PREFIX."product_option_value` as product_option_value_table on product_option_value_table.product_option_id = order_option_table.product_option_id and product_option_value_table.product_id= order_product.product_id and product_option_value_table.product_option_value_id = order_option_table.product_option_value_id"; //and product_option_value_table.product_option_value_id = order_option_table.product_option_value_id 
+
+    	if (!empty($type_option)) {
+        	$sql .= " and product_option_value_table.option_id = $type_option";
+      	}
+			
+		$sql .= " LEFT JOIN `".DB_PREFIX."customer_reward` as customer_reward_table on customer_reward_table.customer_id= order_table.customer_id";
+		$sql .= " LEFT JOIN `".DB_PREFIX."order_total` as order_total_table on order_total_table.order_id= order_table.order_id and order_total_table.code = 'shipping'";
+		$sql .= " LEFT JOIN `".DB_PREFIX."order_total` as order_total_bbcod on order_total_bbcod.order_id= order_table.order_id and (order_total_bbcod.code = 'bb_cod' or order_total_bbcod.code = 'cod_cdek_total')";
+
+		if ($param === -100){
+
+      		if (empty($param2)){
+				
+        	} else {
+
+          		$sql .= " WHERE DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and order_table.order_status_id <> 0";
+			}
+		} 
+		elseif ($param === -1){
+			if (empty($param2)){
+				$sql .= " WHERE order_table.order_status_id <> 5  and order_table.order_status_id <> 0";
+			} else {
+				$sql .= " WHERE order_table.order_status_id <> 5 and DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and order_table.order_status_id <> 0";
+			}
+		} 
+		elseif($param === -200){
+
+			$sql .= " WHERE  DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and DATE_FORMAT(order_table.date_added,'%Y-%m-%d') <= '$param3' and order_table.order_status_id <> 0";
+		
+		} else {
+			$sql .= " WHERE order_table.order_id = $param  and order_table.order_status_id <> 0";
+		};				
+
+		//if (!empty($type_option)) {
+       	//  $sql .=" and product_option_value_table.option_value_id is not null"; 
+      	//};
+			
+		$sql .= " GROUP BY order_table.order_id, order_table.invoice_no, order_table.invoice_prefix, order_table.store_id, order_table.store_name, order_table.store_url, order_table.customer_id, order_table.customer_group_id, order_table.firstname, order_table.lastname, order_table.email, order_table.telephone, order_table.fax, order_table.custom_field, order_table.payment_firstname, order_table.payment_lastname, order_table.payment_company, order_table.payment_address_1, order_table.payment_address_2, order_table.payment_city, order_table.payment_postcode, order_table.payment_country, order_table.payment_country_id, order_table.payment_zone, order_table.payment_zone_id, order_table.payment_address_format, order_table.payment_custom_field, order_table.payment_method, order_table.payment_code, order_table.shipping_firstname, order_table.shipping_lastname, order_table.shipping_company, order_table.shipping_address_1, order_table.shipping_address_2, order_table.shipping_city, order_table.shipping_postcode, order_table.shipping_country, order_table.shipping_country_id, order_table.shipping_zone, order_table.shipping_zone_id, order_table.shipping_address_format, order_table.shipping_custom_field, order_table.shipping_method, order_table.shipping_code, order_table.comment, order_table.total, order_table.order_status_id, order_table.affiliate_id, order_table.commission, order_table.marketing_id , order_table.date_added, order_table.date_modified,order_product.product_id ,product_option_value_table.option_value_id,order_product.quantity,order_product.price,order_product.total ";
+
+		$query = $this->db->query( $sql );
+		$json['success'] = $query->rows ;
+
+		$this->response->addHeader('Content-Type: application/json');
+		//$this->response->setCompression(9);
+		$this->response->setOutput(json_encode($json));
+
+	}
+	
 	public function deleteNoms() {
 		
 		$this->load->language('api/deleteNoms');
@@ -2493,7 +2569,7 @@ class Controllerapismpextension extends Controller {
 
 	public function add() {
 
-		//$logger = new Log('ProductOptions_query_texts.log');
+		//$logger = new Log('ProductDescription.log');
 
         $this->load->language('api/product');
 
@@ -2645,9 +2721,9 @@ class Controllerapismpextension extends Controller {
 			if ($exist_table_product_tag) {
                 
 				if ($exist_meta_title) {
-                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description` , 'meta_title', 'meta_description', 'meta_keyword', 'tag')" ;
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description` , `meta_title`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`" ;
                 } else {
-                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`" ;
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `care`, `advantages`" ;
                 }
                 if ($exist_meta_h1) {
                     $sql_product_description  .= ", `meta_h1`";
@@ -2659,9 +2735,9 @@ class Controllerapismpextension extends Controller {
             } else {
                 
 				if ($exist_meta_title) {
-                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`" ;
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`" ;
                 } else {
-                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag`";
+                    $sql_product_description  = "INSERT INTO `".DB_PREFIX."product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`";
                 }
 
                 if ($exist_meta_h1) {
@@ -2749,6 +2825,8 @@ class Controllerapismpextension extends Controller {
                         $meta_keywords = $this->object_to_array($data->{'meta_keywords'});
                         $tags = $this->object_to_array($data->{'tags'});
                         $keywords = $this->object_to_array($data->{'seo_keyword'});
+						$instructions_care = $this->object_to_array($data->{'care'});
+						$instructions_advantages = $this->object_to_array($data->{'advantages'});
 				
                         $length = (int)$data->{'length'};
                         $width = (int)$data->{'width'};
@@ -2779,11 +2857,11 @@ class Controllerapismpextension extends Controller {
                             $specials = $data->{'specials'};
                         }
 
-                        if (empty($data->{'akcii'})) {
-                            $akcii_empty = true;
+                        if (empty($data->{'discounts'})) {
+                            $discounts_empty = true;
                         }else{
-                            $akcii_empty = false;
-                            $akcii = $data->{'akcii'};
+                            $discounts_empty = false;
+                            $discounts = $data->{'discounts'};
                         }
 				
                         // extract the product details
@@ -2833,14 +2911,19 @@ class Controllerapismpextension extends Controller {
                             $meta_description = isset($meta_descriptions[$language_code]) ? urldecode($this->db->escape($meta_descriptions[$language_code])) : '';
                             $meta_keyword = isset($meta_keywords[$language_code]) ? urldecode($this->db->escape($meta_keywords[$language_code])) : '';
                             $tag = isset($tags[$language_code]) ? urldecode($this->db->escape($tags[$language_code])) : '';
+
+							$care = isset($instructions_care[$language_code]) ? urldecode($this->db->escape($instructions_care[$language_code])) : '';
+							$advantages = isset($instructions_advantages[$language_code]) ? urldecode($this->db->escape($instructions_advantages[$language_code])) : '';
+							//$care = 'no data';
+							//$advantages = 'no data';
 					
 					        if ($exist_table_product_tag) {
 					
                                 $sql_product_description  .= ($first_product_description ) ? "" : ",";
                                 if ($exist_meta_title) {
-                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword'";
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$care', '$advantages' ";
                                 } else {
-                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword'";
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword', '$care', '$advantages' ";
                                 }
                                 if ($exist_meta_h1) {
                                     $sql_product_description  .= ", '$meta_h1'";
@@ -2857,9 +2940,9 @@ class Controllerapismpextension extends Controller {
 					
                                 $sql_product_description  .= ($first_product_description ) ? "" : ",";
                                 if ($exist_meta_title) {
-                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag' ";
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag', '$care', '$advantages' ";
                                 } else {
-                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag' " ;
+                                    $sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag', '$care', '$advantages' " ;
                                 }
                                 if ($exist_meta_h1) {
                                     $sql_product_description  .= ", '$meta_h1'";
@@ -3058,15 +3141,15 @@ class Controllerapismpextension extends Controller {
                         $sql_delete_product_discount .= " $product_id ";
                         $first_delete_product_discount= false;
         
-                        if (!$akcii_empty) {
-                            if (count($akcii) > 0) {
-                                foreach ($akcii as $special) {
-                                    $customer_group_id= $special->{'customer_group_id'};
-                                    $priority= $special->{'priority'};
-                                    $date_start= $special->{'date_start'};
-                                    $price= $special->{'price'};
-                                    $date_end= $special->{'date_end'};
-                                    $quantity= $special->{'quantity'};
+                        if (!$discounts_empty) {
+                            if (count($discounts) > 0) {
+                                foreach ($discounts as $discount) {
+                                    $customer_group_id= $discount->{'customer_group_id'};
+                                    $priority= $discount->{'priority'};
+                                    $date_start= $discount->{'date_start'};
+                                    $price= $discount->{'price'};
+                                    $date_end= $discount->{'date_end'};
+                                    $quantity= $discount->{'quantity'};
 
                                     $sql_product_discount .= ($first_product_discount ) ? "" : ",";
                                     $sql_product_discount .= "  ($product_id, $customer_group_id, $quantity,  $priority, $price,'$date_start','$date_end') ";
@@ -3284,6 +3367,10 @@ class Controllerapismpextension extends Controller {
                         $sql_product_descriptionDUPLICATE.= ",`meta_h1`= VALUES(`meta_h1`)";
                     }
                 }
+
+				$sql_product_descriptionDUPLICATE .= ", `care` = VALUES(`care`)";
+				$sql_product_descriptionDUPLICATE .= ", `advantages` = VALUES(`advantages`)";
+
                 $sql_product_description  .=$sql_product_descriptionDUPLICATE;
                 $sql_product_description  .=";";
                 $this->db->query($sql_product_description  );
