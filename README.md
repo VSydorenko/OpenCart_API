@@ -1,1 +1,1 @@
-Файли з розширенням ".php" потрібно помістити в папку на сайті: /catalog/controller/api 
+Файл "smp_extension.php" потрібно помістити в папку на сайті: "catalog/controller/api/"
