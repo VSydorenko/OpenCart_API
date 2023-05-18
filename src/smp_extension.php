@@ -2598,7 +2598,7 @@ class Controllerapismpextension extends Controller
 						//$sql_category .= "`column`= VALUES(`column`),";
 						//$sql_category .= "`sort_order`= VALUES(`sort_order`),";
 						//$sql_category .= "`date_added`= VALUES(`date_added`),";
-						//$sql_category .= "`date_modified`= VALUES(`date_modified`),";
+						$sql_category .= "`date_modified`= VALUES(`date_modified`),";
 						$sql_category .= "`status`= VALUES(`status`)";
 						$sql_category .= ";";
 
@@ -3340,9 +3340,9 @@ class Controllerapismpextension extends Controller
 			$sql_productDUPLICATE   .= "`price`= VALUES(`price`),";
 			$sql_productDUPLICATE   .= "`points`= VALUES(`points`),";
 
-			$sql_productDUPLICATE   .= "`date_added`= '$date_added',";
-			$sql_productDUPLICATE   .= "`date_modified`= '$date_modified',";
-			$sql_productDUPLICATE   .= "`date_available`= '$date_available',";
+			#$sql_productDUPLICATE   .= "`date_added`= '$date_added',";
+			$sql_productDUPLICATE   .= "`date_modified`= VALUES(`date_modified`),";
+			$sql_productDUPLICATE   .= "`date_available`= VALUES(`date_available`),";
 
 			$sql_productDUPLICATE   .= "`weight`= VALUES(`weight`),";
 			$sql_productDUPLICATE   .= "`weight_class_id`= VALUES(`weight_class_id`),";
