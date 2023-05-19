@@ -3613,6 +3613,62 @@ class Controllerapismpextension extends Controller
 		$this->response->setOutput(json_encode($json_return));
 	} //function add()
 
+	public function AddUpdateRelatedProducts()
+	{
+		
+		$arr_return = array();
+
+		$image_f = file_get_contents('php://input');
+		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
+		file_put_contents($nameZip, $image_f);
+		$zipArc = zip_open($nameZip);
+
+		if (is_resource($zipArc)) {
+
+			while ($zip_entry = zip_read($zipArc)) {
+
+				if (zip_entry_open($zipArc, $zip_entry, "r")) {
+
+					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
+					$data_array = json_decode($dump);
+
+					foreach ($data_array as $product_id => $related_array) {
+						
+						$product_id = (int)$product_id;
+						$sql_delete = "DELETE FROM `" . DB_PREFIX . "product_related` WHERE product_id = $product_id";
+						$this->db->query($sql_delete);
+
+						$first_related = true;
+						$sql_insert = "INSERT INTO `" . DB_PREFIX . "product_related` (`product_id`, `related_id`) VALUES ";
+
+						foreach ($related_array as $related_id) {
+							
+							$sql_insert .= ($first_related) ? "" : ",";
+							$sql_insert .= " ($product_id, $related_id)";
+							$first_related = false;
+
+						}
+
+						if (!$first_related) {
+							$this->db->query($sql_insert);
+						}
+					}
+				}
+			}
+
+			$arr_return['success'] = 'related products succefully updated';
+			zip_close($zipArc);
+			unlink($nameZip);
+
+		} else {
+			$arr_return['error'] = 'zip error add related products';
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($arr_return));
+
+	} // function AddUpdateRelatedProducts()
+
 	protected function object_to_array($data)
 	{
 
