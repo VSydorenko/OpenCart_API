@@ -2874,9 +2874,9 @@ class Controllerapismpextension extends Controller
 			if ($exist_table_product_tag) {
 
 				if ($exist_meta_title) {
-					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description` , `meta_title`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`";
+					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description` , `meta_title`, `meta_description`, `meta_keyword`, `tag` "; #, `care`, `advantages`";
 				} else {
-					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `care`, `advantages`";
+					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword` "; #, `care`, `advantages`";
 				}
 				if ($exist_meta_h1) {
 					$sql_product_description  .= ", `meta_h1`";
@@ -2887,9 +2887,9 @@ class Controllerapismpextension extends Controller
 			} else {
 
 				if ($exist_meta_title) {
-					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`";
+					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_title`, `meta_description`, `meta_keyword`, `tag`"; #, `care`, `advantages`";
 				} else {
-					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag`, `care`, `advantages`";
+					$sql_product_description  = "INSERT INTO `" . DB_PREFIX . "product_description` (`product_id`, `language_id`, `name`, `description`, `meta_description`, `meta_keyword`, `tag` "; #, `care`, `advantages`";
 				}
 
 				if ($exist_meta_h1) {
@@ -3073,9 +3073,9 @@ class Controllerapismpextension extends Controller
 
 								$sql_product_description  .= ($first_product_description) ? "" : ",";
 								if ($exist_meta_title) {
-									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$care', '$advantages' ";
+									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword' "; #, '$care', '$advantages' ";
 								} else {
-									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword', '$care', '$advantages' ";
+									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword' "; #, '$care', '$advantages' ";
 								}
 								if ($exist_meta_h1) {
 									$sql_product_description  .= ", '$meta_h1'";
@@ -3091,9 +3091,9 @@ class Controllerapismpextension extends Controller
 
 								$sql_product_description  .= ($first_product_description) ? "" : ",";
 								if ($exist_meta_title) {
-									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag', '$care', '$advantages' ";
+									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword', '$tag' "; #, '$care', '$advantages' ";
 								} else {
-									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag', '$care', '$advantages' ";
+									$sql_product_description  .= " ( $product_id, $language_id, '$name', '$description',  '$meta_description', '$meta_keyword', '$tag' "; #, '$care', '$advantages' ";
 								}
 								if ($exist_meta_h1) {
 									$sql_product_description  .= ", '$meta_h1'";
@@ -3523,8 +3523,8 @@ class Controllerapismpextension extends Controller
 					}
 				}
 
-				$sql_product_descriptionDUPLICATE .= ", `care` = VALUES(`care`)";
-				$sql_product_descriptionDUPLICATE .= ", `advantages` = VALUES(`advantages`)";
+				#$sql_product_descriptionDUPLICATE .= ", `care` = VALUES(`care`)";
+				#$sql_product_descriptionDUPLICATE .= ", `advantages` = VALUES(`advantages`)";
 
 				$sql_product_description  .= $sql_product_descriptionDUPLICATE;
 				$sql_product_description  .= ";";
