@@ -1241,7 +1241,7 @@ class Controllerapismpextension extends Controller
 						}
 
 						if ($this->use_table_seo_url) {
-							
+
 							$sql_ocfilter_option_value = "INSERT INTO `" . DB_PREFIX . "ocfilter_option_value` ( 
 								`value_id`, 
 								`option_id`, 
@@ -1250,9 +1250,8 @@ class Controllerapismpextension extends Controller
 								`image`, 
 								`sort_order`) VALUES ";
 							$sql_ocfilter_option_value .= "($value_id, $option_id, '$value_keyword', '$value_color', '$value_image', $value_sort_order)";
-
 						} else {
-							
+
 							$source = 1;
 							$sql_ocfilter_option_value = "INSERT INTO `" . DB_PREFIX . "ocfilter_filter_value` ( 
 								`value_id`, 
@@ -1262,10 +1261,9 @@ class Controllerapismpextension extends Controller
 								`image`, 
 								`sort_order`) VALUES ";
 							$sql_ocfilter_option_value .= "($value_id, $source, $option_id, '$value_color', '$value_image', $value_sort_order)";
-
 						}
-												
-						$sql_ocfilter_option_value .= " ON DUPLICATE KEY UPDATE `sort_order` = VALUES(`sort_order`)"; 
+
+						$sql_ocfilter_option_value .= " ON DUPLICATE KEY UPDATE `sort_order` = VALUES(`sort_order`)";
 						$this->db->query($sql_ocfilter_option_value);
 
 						$ocfilter_return['values'][$value_ref_1c] = $value_id;
@@ -1286,7 +1284,7 @@ class Controllerapismpextension extends Controller
 								`filter_id`, 
 								`name`) VALUES ";
 						}
-												
+
 						$first_value_description = true;
 
 						foreach ($value_description as $val_desc) {
@@ -1301,7 +1299,7 @@ class Controllerapismpextension extends Controller
 							} else {
 								$sql_ocfilter_option_value_description .= "($value_id, $source, $language_id, $option_id, '$value_name')";
 							}
-														
+
 							$first_value_description = false;
 						}
 
@@ -1387,7 +1385,7 @@ class Controllerapismpextension extends Controller
 					} else {
 						$this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_filter_value_to_product WHERE product_id = '" . (int)$product_id . "'");
 					}
-										
+
 					foreach ($filter_data as $ocfilter_value) {
 
 						$option_id = $ocfilter_value['option_id'];
@@ -1404,7 +1402,7 @@ class Controllerapismpextension extends Controller
 							value_id = '" . (string)$value_id . "', 
 							source = 1, 
 							product_id = '" . (int)$product_id . "'");
-						}						
+						}
 					}
 				}
 			}
@@ -3066,7 +3064,7 @@ class Controllerapismpextension extends Controller
 						$manufacturer_name = urldecode($this->db->escape($data->{'manufacturer_name'}));
 						$manufacturer_image = urldecode($this->db->escape($data->{'manufacturer_image'}));
 						$manufacturer_description = urldecode($this->db->escape($data->{'manufacturer_description'}));
-						$keyword_manufacturer = urldecode($this->db->escape($data->{'keyword_manufacturer'}));
+						$manufacturer_keyword = urldecode($this->db->escape($data->{'keyword_manufacturer'}));
 						$language_id_u = $data->{'language_id_u'};
 
 						#$image = $data->{'image'};
@@ -3133,8 +3131,18 @@ class Controllerapismpextension extends Controller
 						$weight_class_id = (isset($weight_class_ids[$weight_unit])) ? $weight_class_ids[$weight_unit] : 0;
 						$length_class_id = (isset($length_class_ids[$measurement_unit])) ? $length_class_ids[$measurement_unit] : 0;
 
-						if ($manufacturer_name) {
-							$this->storeManufacturerIntoDatabase($manufacturers, $manufacturer_name, $store_ids, $available_store_ids, $keyword_manufacturer, $languages, $language_id_u, $manufacturer_image, $manufacturer_description);
+						if (!empty($manufacturer_name)) {
+
+							$this->storeManufacturerIntoDatabase(
+								$manufacturers,
+								$available_store_ids,
+								$languages,
+								$manufacturer_name,
+								$manufacturer_description,
+								$manufacturer_image,
+								$manufacturer_keyword,
+								$store_ids
+							);
 							$manufacturer_id = $manufacturers[$manufacturer_name]['manufacturer_id'];
 						} else {
 							$manufacturer_id = 0;
@@ -3543,20 +3551,24 @@ class Controllerapismpextension extends Controller
             }
 			*/
 
+			/*
 			if (!$first_del_product_attribute) {
 				$sql_del_product_attribute .= ");";
 				$this->db->query($sql_del_product_attribute);
 			}
+			*/
 
 			if (!$first_del_product_filter) {
 				$sql_del_product_filter .= ");";
 				$this->db->query($sql_del_product_filter);
 			}
 
+			/*
 			if (!$first_product_attribute) {
 				$sql_product_attribute .= ";";
 				$this->db->query($sql_product_attribute);
 			}
+			*/
 
 			if (!$first_product_filter) {
 				$sql_product_filter .= ";";
@@ -3847,10 +3859,10 @@ class Controllerapismpextension extends Controller
 		return $layout_ids;
 	}
 
+	#region Manufacturer
 	protected function getManufacturers()
 	{
 		// find all manufacturers already stored in the database
-		$manufacturer_ids = array();
 		$sql  = "SELECT ms.manufacturer_id, ms.store_id, m.`name` FROM `" . DB_PREFIX . "manufacturer_to_store` ms ";
 		$sql .= "INNER JOIN `" . DB_PREFIX . "manufacturer` m ON m.manufacturer_id=ms.manufacturer_id";
 		$result = $this->db->query($sql);
@@ -3874,6 +3886,7 @@ class Controllerapismpextension extends Controller
 		}
 		return $manufacturers;
 	}
+	#endregion
 
 	protected function getWeightClassIds()
 	{
@@ -4020,98 +4033,92 @@ class Controllerapismpextension extends Controller
 		return $seo_keywords;
 	}
 
-	protected function storeManufacturerIntoDatabase(&$manufacturers, $name, &$store_ids, &$available_store_ids, $keyword_manufacturer, &$language_ids, $language_id_u, &$manufacturer_image, &$manufacturer_description)
-	{
+	protected function storeManufacturerIntoDatabase(
+		&$manufacturers, # array of available manufacturers
+		$available_store_ids,
+		$languages, # available languages
+		$manufacturer_name,
+		$manufacturer_description,
+		$manufacturer_image,
+		$manufacturer_keyword, # seo
+		$store_ids # store id's from incoming product data
+	) {
 		foreach ($store_ids as $store_id) {
+
+			$update_description = true;
+
 			if (!in_array($store_id, $available_store_ids)) {
 				continue;
 			}
-			if (!isset($manufacturers[$name]['manufacturer_id'])) {
 
-				$name_name = $this->db->escape($name);
-				$this->db->query("INSERT INTO " . DB_PREFIX . "manufacturer SET name = '" . $this->db->escape($name) . "', image='$manufacturer_image', sort_order = '0'");
+			if (!isset($manufacturers[$manufacturer_name]['manufacturer_id'])) {
+
+				$this->db->query("INSERT INTO " . DB_PREFIX . "manufacturer SET name = '$manufacturer_name', image='$manufacturer_image', sort_order = '0'");
 				$manufacturer_id = $this->db->getLastId();
-				if (!isset($manufacturers[$name])) {
-					$manufacturers[$name] = array();
+				if (!isset($manufacturers[$manufacturer_name])) {
+					$manufacturers[$manufacturer_name] = array();
 				}
 
-				$manufacturers[$name]['manufacturer_id'] = $manufacturer_id;
+				$manufacturers[$manufacturer_name]['manufacturer_id'] = $manufacturer_id;
+	
 			} else {
-
-				$manufacturer_id = $manufacturers[$name]['manufacturer_id'];
-				$this->db->query("INSERT INTO " . DB_PREFIX . "manufacturer  (`manufacturer_id`,`image`)  VALUES ($manufacturer_id,'$manufacturer_image')  ON DUPLICATE KEY UPDATE `image`= VALUES(`image`); ");
+				$manufacturer_id = $manufacturers[$manufacturer_name]['manufacturer_id'];
+				$update_description = false;
 			}
 
-			$manufacturer_description = false;
+			if (!isset($manufacturers[$manufacturer_name]['store_ids'])) {
+				$manufacturers[$manufacturer_name]['store_ids'] = array();
+			}
 
-			//$query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = DATABASE() AND table_name  = '".DB_PREFIX."manufacturer_description';";
-			//$result = $this->db->query($query);
+			if (!in_array($store_id, $manufacturers[$manufacturer_name]['store_ids'])) {
+				$manufacturer_id = $manufacturers[$manufacturer_name]['manufacturer_id'];
+				$sql = "INSERT INTO `" . DB_PREFIX . "manufacturer_to_store` SET manufacturer_id='" . (int)$manufacturer_id . "', store_id='" . (int)$store_id . "'";
+				$this->db->query($sql);
+				$manufacturers[$manufacturer_name]['store_ids'][] = $store_id;
+			}
+
+			if (!$update_description) {
+				continue;
+			}
+
+			$this->db->query("INSERT INTO " . DB_PREFIX . "manufacturer  (`manufacturer_id`, `image`)  VALUES ($manufacturer_id, '$manufacturer_image')  ON DUPLICATE KEY UPDATE `image`= VALUES(`image`); ");
 
 			$sql = "SHOW COLUMNS FROM `" . DB_PREFIX . "manufacturer_description` LIKE 'name'";
 			$query = $this->db->query($sql);
-			$exist_name = ($query->num_rows > 0) ? true : false;
+			$exist_column_name = ($query->num_rows > 0) ? true : false;
 
-			$sql = "SHOW COLUMNS FROM `" . DB_PREFIX . "manufacturer_description` LIKE 'meta_h1'";
-			$query = $this->db->query($sql);
-			$exist_meta_h1 = ($query->num_rows > 0) ? true : false;
+			if (!$this->use_table_seo_url and !empty($manufacturer_keyword)) { # SEO opencart 2
+				$this->db->query("INSERT INTO `" . DB_PREFIX . "url_alias` (`query`,`keyword`) VALUES ( 'manufacturer_id=$manufacturer_id','$manufacturer_keyword')");
+			}
 
-			//if (count($result->rows)==1) { 
-			//		$manufacturer_description = true;
-			//	}
+			$meta_title = "";
+			$meta_h1 = "";
+			$meta_description = "";
+			$meta_keyword = "";
 
+			foreach ($languages as $language) {
 
-			foreach ($language_ids as $language) {
-
-				$language_code = $language['code'];
 				$language_id = $language['language_id'];
 
-				if ($language_code == $language_id_u) {
-
-					if ($this->use_table_seo_url) { # Opencart 3
-						$this->db->query("INSERT INTO `" . DB_PREFIX . "seo_url` (`query`,`keyword`, `store_id`,`language_id`) VALUES ( 'manufacturer_id=$manufacturer_id','$keyword_manufacturer',$store_id,$language_id)");
-					} else { # Opencart 2
-						$this->db->query("INSERT INTO `" . DB_PREFIX . "url_alias` (`query`,`keyword`) VALUES ( 'manufacturer_id=$manufacturer_id','$keyword_manufacturer')");
-					}
-
-					if ($manufacturer_description) {
-
-						$sql = "INSERT INTO `" . DB_PREFIX . "manufacturer_description` (`language_id`,`manufacturer_id`,`description`,`meta_description`,`meta_keyword`,`meta_title`";
-
-						if ($exist_name) {
-							$sql .= ",`name` ";
-						}
-
-						if ($exist_meta_h1) {
-							$sql .= ",`meta_h1` ";
-						}
-
-						$sql .= ") VALUES ($language_id, $manufacturer_id, '$name_name','$name_name','$name_name','$name_name' ";
-
-						if ($exist_name) {
-							$sql .= ",'$name_name' ";
-						}
-
-						if ($exist_meta_h1) {
-							$sql .= ",'$name_name' ";
-						}
-
-						$sql .= ")";
-
-						$this->db->query($sql);
-					}
+				if ($this->use_table_seo_url and !empty($manufacturer_keyword)) { # Opencart 3
+					$this->db->query("INSERT INTO `" . DB_PREFIX . "seo_url` (`query`, `keyword`, `store_id`, `language_id`) VALUES ( 'manufacturer_id=$manufacturer_id', '" . trim($manufacturer_keyword) . "', $store_id, $language_id)");
 				}
-			}
 
-			if (!isset($manufacturers[$name]['store_ids'])) {
-				$manufacturers[$name]['store_ids'] = array();
-			}
+				$sql = "INSERT INTO `" . DB_PREFIX . "manufacturer_description` (`language_id`,`manufacturer_id`,`description`,`meta_description`,`meta_keyword`,`meta_title`, `meta_h1`";
 
-			if (!in_array($store_id, $manufacturers[$name]['store_ids'])) {
-				$manufacturer_id = $manufacturers[$name]['manufacturer_id'];
-				$sql = "INSERT INTO `" . DB_PREFIX . "manufacturer_to_store` SET manufacturer_id='" . (int)$manufacturer_id . "', store_id='" . (int)$store_id . "'";
+				if ($exist_column_name) {
+					$sql .= ",`name` ";
+				}
+
+				$sql .= ") VALUES ($language_id, $manufacturer_id, '$manufacturer_description','$meta_description','$meta_keyword','$meta_title','$meta_h1' ";
+
+				if ($exist_column_name) {
+					$sql .= ",'$manufacturer_name' ";
+				}
+
+				$sql .= ")";
 				$this->db->query($sql);
-				$manufacturers[$name]['store_ids'][] = $store_id;
-			}
+			}	
 		}
 	}
 
@@ -4694,7 +4701,7 @@ class Controllerapismpextension extends Controller
 			$this->load->model('catalog/smpoc2/product');
 			$this->load->model('catalog/smpoc2/category');
 		}
-		
+
 		$json = array();
 
 		$flieData = file_get_contents('php://input');
@@ -4721,7 +4728,7 @@ class Controllerapismpextension extends Controller
 						} else {
 							$this->model_catalog_smpoc2_product->deleteProduct($product_id);
 						}
-												
+
 						$json['products'][$href] = $product_id;
 					}
 				}
@@ -4738,7 +4745,7 @@ class Controllerapismpextension extends Controller
 						} else {
 							$this->model_catalog_smpoc2_category->deleteCategory($category_id);
 						}
-						
+
 						$json['categories'][$href] = $category_id;
 					}
 				}
@@ -4751,5 +4758,137 @@ class Controllerapismpextension extends Controller
 		$returnArray = ['success' => $json];
 		$this->response->addHeader('Content-Type: application/json');
 		$this->response->setOutput(json_encode($returnArray));
+	}
+
+	public function createUpdateAttributes()
+	{
+
+		$this->load->model('localisation/language');
+		$languages = $this->model_localisation_language->getLanguages();
+
+		$this->response->addHeader('Content-Type: application/json');
+
+		$arrayReturn = array();
+		$returnData = array();
+
+		$str_file = file_get_contents('php://input');
+		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
+		file_put_contents($nameZip, $str_file);
+		$zipArc = zip_open($nameZip);
+
+		if (!is_resource($zipArc)) {
+			$arrayReturn['error'] = 'problem with opening zip-file!';
+			$this->response->setOutput(json_encode($arrayReturn));
+			return null;
+		}
+
+		$zipEntry = zip_read($zipArc);
+		zip_entry_open($zipArc, $zipEntry);
+		$fileData = zip_entry_read($zipEntry, zip_entry_filesize($zipEntry));
+		$attributes_array = json_decode(htmlspecialchars_decode($fileData), true);
+
+		$attribute_group_id = $this->getAttributeGroupId();
+		if ($attribute_group_id == 0) {
+			$attribute_group_id = $this->addAttributeGroup($languages);
+		}
+
+		foreach ($attributes_array as $attribute_data) {
+
+			$ref_1c = $attribute_data['ref_1c'];
+			$attribute_id = (int)$attribute_data['attribute_id'];
+			$sort_order = (int)$attribute_data['sort_order'];
+			$description = $attribute_data['description'];
+
+			if ($attribute_id == 0) {
+				$this->db->query("INSERT INTO " . DB_PREFIX . "attribute SET attribute_group_id = '" . $attribute_group_id . "', sort_order = '" . $sort_order . "'");
+				$attribute_id = $this->db->getLastId();
+			} else {
+				$this->db->query("UPDATE " . DB_PREFIX . "attribute SET sort_order = '" . $sort_order . "' WHERE attribute_id = '" . $attribute_id . "'");
+				$this->db->query("DELETE FROM " . DB_PREFIX . "attribute_description WHERE attribute_id = '" . $attribute_id . "'");
+			}
+
+			foreach ($description as $language_code => $name) {
+				$language_id = (int)$languages[$language_code]['language_id'];
+				$this->db->query("INSERT INTO " . DB_PREFIX . "attribute_description SET attribute_id = '" . $attribute_id . "', language_id = '" . $language_id . "', name = '" . urldecode($this->db->escape($name)) . "'");
+			}
+
+			$returnData[$ref_1c] = $attribute_id;
+		}
+
+		$arrayReturn['success'] = $returnData;
+		$this->response->setOutput(json_encode($arrayReturn));
+	}
+
+	protected function getAttributeGroupId(): int
+	{
+
+		$attribute_group_id = 0;
+
+		$queryText = "SELECT MAX(attribute_group_id) AS attribute_group_id FROM `" . DB_PREFIX . "attribute_group_description` WHERE name LIKE '%Характеристики%'";
+		$query = $this->db->query($queryText);
+		if (!is_null($query->row['attribute_group_id'])) {
+			$attribute_group_id = $query->row['attribute_group_id'];
+		}
+
+		return $attribute_group_id;
+	}
+
+	protected function addAttributeGroup($languages): int
+	{
+
+		$this->db->query("INSERT INTO `" . DB_PREFIX . "attribute_group` SET sort_order = 1");
+		$attribute_group_id = $this->db->getLastId();
+		$name = 'Характеристики';
+		foreach ($languages as $lang_data) {
+			$language_id = $lang_data['language_id'];
+			$this->db->query("INSERT INTO " . DB_PREFIX . "attribute_group_description SET attribute_group_id = '" . (int)$attribute_group_id . "', language_id = '" . (int)$language_id . "', name = '" . $name . "'");
+		}
+
+		return $attribute_group_id;
+	}
+
+	public function attachAttributesToProducts()  {
+		
+		$this->load->model('localisation/language');
+		$languages = $this->model_localisation_language->getLanguages();
+
+		$this->response->addHeader('Content-Type: application/json');
+
+		$arrayReturn = array();
+
+		$str_file = file_get_contents('php://input');
+		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
+		file_put_contents($nameZip, $str_file);
+		$zipArc = zip_open($nameZip);
+
+		if (!is_resource($zipArc)) {
+			$arrayReturn['error'] = 'problem with opening zip-file!';
+			$this->response->setOutput(json_encode($arrayReturn));
+			return null;
+		}
+
+		$zipEntry = zip_read($zipArc);
+		zip_entry_open($zipArc, $zipEntry);
+		$fileData = zip_entry_read($zipEntry, zip_entry_filesize($zipEntry));
+		$products_array = json_decode(htmlspecialchars_decode($fileData), true);
+
+		foreach ($products_array as $product_id => $attributes_array) {
+			
+			foreach ($attributes_array as $attribute_id => $attr_descriptions) {
+				
+				$this->db->query("DELETE FROM " . DB_PREFIX . "product_attribute WHERE product_id = '" . (int)$product_id . "' AND attribute_id = '" . (int)$attribute_id . "'");
+
+				foreach ($attr_descriptions as $language_code => $description) {
+					
+					$language_id = $languages[$language_code]['language_id'];
+					$description = trim($this->db->escape(urldecode($description)));
+					$this->db->query("INSERT INTO " . DB_PREFIX . "product_attribute SET product_id = '" . (int)$product_id . "', attribute_id = '" . (int)$attribute_id . "', language_id = '" . (int)$language_id . "', text = '" .  $description . "'");
+				}
+			}
+		}
+
+		$arrayReturn['success'] = 'Attributes for products updated successfully!';
+		$this->response->setOutput(json_encode($arrayReturn));
+
 	}
 }
