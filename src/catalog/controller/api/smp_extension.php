@@ -41,6 +41,8 @@ class Controllerapismpextension extends Controller
 		ORDER BY p.product_id");
 
 		$query = $this->db->query($query);
+		$seo_keywords = $this->getProductSEOKeywords(true);
+
 		foreach ($query->rows as $result) {
 			if ($result['main_image']) {
 				$image = $this->smp_GetImageAddress($result['main_image']);
@@ -66,6 +68,7 @@ class Controllerapismpextension extends Controller
 				'category_id' => $result['category_id'],
 				'language_code' => $result['language_code'],
 				'image_path' => $result['main_image'],
+				'seo_keyword' => $seo_keywords[$result['product_id']],
 			);
 		}
 
@@ -94,12 +97,17 @@ class Controllerapismpextension extends Controller
 		LEFT JOIN " . DB_PREFIX . "language l
 		ON (cd.language_id = l.language_id) 
 		WHERE c2s.store_id = '" . (int)$this->config->get('config_store_id') . "'  
-		ORDER BY c.sort_order, c.parent_id");
+		ORDER BY c.parent_id, c.sort_order");
+
+		$seo_keywords = $this->getCategoriesSEOKeywords(true);
 
 		foreach ($query->rows as $result) {
 
+			$category_id = $result['category_id'];
+			$seo_keyword = $seo_keywords[$category_id];
+
 			$data[] = array(
-				'category_id' => $result['category_id'],
+				'category_id' => $category_id,
 				'parent_id' => $result['parent_id'],
 				'name' => $result['name'],
 				'description' => utf8_substr(trim(html_entity_decode($result['description'], ENT_QUOTES, 'UTF-8')), 0),
@@ -108,6 +116,7 @@ class Controllerapismpextension extends Controller
 				'meta_keyword' => $result['meta_keyword'],
 				'meta_h1' => $result['meta_h1'],
 				'language_code' => $result['language_code'],
+				'seo_keyword' => $seo_keyword,
 			);
 		}
 
@@ -670,10 +679,12 @@ class Controllerapismpextension extends Controller
 						}
 
 						# Обходим присланные из 1С текущие изображения
+						$mainImageExist = false;
 						foreach ($current_images as $current_img_desc) {
 
 							$main_image = $current_img_desc->{'main_image'};
 							if ($main_image == 1) {
+								$mainImageExist = true;
 								continue;
 							}
 
@@ -695,7 +706,21 @@ class Controllerapismpextension extends Controller
 							}
 						}
 
-						# Если на стороне 1С удалили одно из текущих изображений - удаляем и на сайте
+						# Возможно у товара было удалено основное изображение в 1С, удаляем его и здесь
+						if (!$mainImageExist) {
+							
+							$sqlMainImage = $this->db->query("SELECT image FROM `" . DB_PREFIX . "product` WHERE product_id = $product_id");
+							$mainImagePath = $sqlMainImage->row['image'];
+							if (!empty($mainImagePath)) {
+								$path = DIR_IMAGE . $mainImagePath;
+								if (file_exists($path)) {
+									unlink($path);
+									$this->db->query("UPDATE `" . DB_PREFIX . "product` SET image = '' WHERE product_id = $product_id");
+								}
+							}
+						}
+
+						# Если на стороне 1С удалили одно из текущих вторичных изображений - удаляем и на сайте
 						if (count($arr_sec_images) > 0) {
 
 							foreach ($arr_sec_images as $del_img_id => $del_sort_order) {
@@ -744,143 +769,8 @@ class Controllerapismpextension extends Controller
 						}
 					}
 				}
-
-				/*
-				foreach ($descriptions_array as $description) {
-				
-					$return_description = array();
-
-					$ref = $description->{'ref'}; // УИД ссылки присоединенного файла 1С
-					$path = $description->{'path'}; // Имя подкаталога для размещения изображений товара. На каждый товар свой каталог
-					$main_image = $description->{'main_image'}; // Признак главного изображения, 1 или 0.
-					$product_id = $description->{'product_id'}; // идентификатор товара
-					$product_image_id = $description->{'product_image_id'}; // идентификатор изображения
-					$image_name = $description->{'image_name'}; // наименование изображения из справочника присоединенных файлов
-					$server_path = $description->{'server_path'}; // полный путь к файлу, пустая строка если новый 
-					$extension = $description->{'extension'}; // расширение файла изображения "png","bmp"...
-
-					$new_path = 'catalog/' . $path . '/' . $ref . '.' . $extension; // новый путь к файлу относительно папки "image" в корне папки сайта
-					$full_path = DIR_IMAGE . 'catalog/' . $path . '/' . $ref . '.' . $extension; // Полный физ. путь для создания подкаталога
-
-					if ($main_image == 1) {
-						
-						$current_path = $this->GetProductMainImagePath($product_id);
-						
-						if ($current_path == '' or $current_path == null) { // У товара отсутствет основное изображение
-							
-							$this->CreateProductImageDir($dirname_array, $full_path); // предварительно создаем папку для изображений товара
-							$this->db->query("UPDATE " . DB_PREFIX . "product SET image = '" . $this->db->escape($new_path) . "' WHERE product_id = '" . (int)$product_id . "'");
-							
-						} elseif ($current_path != $new_path) {
-
-							$this->CreateProductImageDir($dirname_array, $new_path); // предварительно создаем папку для изображений товара
-							$this->db->query("UPDATE " . DB_PREFIX . "product SET image = '" . $this->db->escape($new_path) . "' WHERE product_id = '" . (int)$product_id . "'");
-							
-							if (file_exists(DIR_IMAGE . $current_path)) {
-								unlink(DIR_IMAGE . $current_path); // удаляем старое главное изображение
-							}	
-						}
-
-						$return_description['product_image_id'] = 0;
-						$return_description['server_path'] = $new_path;
-						$return_data[$ref] = $return_description;
-
-					} else { // Ветка вторичных изображений
-						
-						if ($product_image_id != 0) { // это существующее изображение
-							
-							$return_description['product_image_id'] = $product_image_id;
-							$return_description['server_path'] = $new_path;
-							$return_data[$ref] = $return_description;
-
-							$current_path = $this->GetAdditionalProductImagePath($product_id, $product_image_id);
-
-							if ($current_path == $new_path) { // пути совпадают
-								
-								$product_not_delete[$product_id] = true;
-								$image_not_delete[] = $product_image_id;
-							
-							} elseif ($current_path == '') { // в карточке товара изображение есть, но пустое, обновляем путь
-								
-								$this->CreateProductImageDir($dirname_array, $full_path); // предварительно создаем папку для изображений товара
-								$this->db->query("UPDATE " . DB_PREFIX . "product_image SET image = '" . $this->db->escape($new_path) . "' WHERE product_image_id = '" . (int)$product_image_id . "' AND product_id = '" . (int)$product_id . "'");
-								
-								$product_not_delete[$product_id] = true;
-								$image_not_delete[] = $product_image_id;
-
-							} elseif (is_null($current_path)) { // на стороне 1С есть идентификаторы, а на стороне сайта удалили изображение
-								#$logger->write("\n There are no record of additional image, product_id = " . $product_id . " product_image_id = " . $product_image_id . "\n\n");
-							}
-
-
-						} else { // это новое вторичное изображение
-							
-							//$this->CreateProductImageDir($dirname_array, $new_path); // предварительно создаем папку для изображений товара
-							$product_image_id_max = $this->GetMaxProductimageId();
-							$product_image_id_max++;
-							$sql_product_image = "INSERT INTO `".DB_PREFIX."product_image` (`product_image_id`, `product_id`, `image`) VALUES (" . $product_image_id_max . ", " . $product_id . ", '" . $this->db->escape($new_path) . "')";
-							$this->db->query($sql_product_image);
-
-							$product_not_delete[$product_id] = true;
-							$image_not_delete[] = $product_image_id_max;
-
-							$return_description['product_image_id'] = $product_image_id_max;
-							$return_description['server_path'] = $new_path;
-							$return_data[$ref] = $return_description;
-
-						}
-					}
-				}
-				*/
 			}
 		}
-
-		/*
-		// удаляем все вторичные изображения 
-		$first_product = true;
-		$first_image = true;
-
-		$sql_image_delete = "SELECT * FROM " . DB_PREFIX . "product_image WHERE product_id IN(";
-		
-		foreach ($product_not_delete as $pd_id => $val) {
-			
-			$sql_image_delete .= ($first_product) ? "" : ", ";
-			$sql_image_delete .= $pd_id;
-			$first_product = false;
-
-		}
-
-		$sql_image_delete .= ") AND product_image_id NOT IN(";
-
-		foreach ($image_not_delete as $img_id) {
-			
-			$sql_image_delete .= ($first_image) ? "" : ", ";
-			$sql_image_delete .= $img_id;
-			$first_image = false;
-
-		}
-
-		$sql_image_delete .= ")";
-
-		if (!$first_product and !$first_image) {
-
-			$query = $this->db->query($sql_image_delete);
-		
-			$rows = $query->rows;
-			foreach ($rows as $row) {
-			
-				$delete_path = $row['image'];
-				$delete_pd_id = $row['product_id'];
-				$delete_img_id = $row['product_image_id'];
-
-				if (file_exists(DIR_IMAGE . $delete_path)) {
-					$this->db->query("DELETE FROM `".DB_PREFIX."product_image` WHERE product_image_id = " . $delete_img_id . " AND product_id = " . $delete_pd_id . "");
-					unlink(DIR_IMAGE . $delete_path);
-				}
-			}
-		}
-		
-		*/
 
 		zip_close($zipArc);
 		unlink($nameZip);
@@ -3962,7 +3852,7 @@ class Controllerapismpextension extends Controller
 		return $language_id;
 	}
 
-	protected function getCategoriesSEOKeywords()
+	protected function getCategoriesSEOKeywords($need_keywords = false)
 	{
 		$sql  = "SELECT * FROM `" . DB_PREFIX . (($this->use_table_seo_url) ? "seo_url` " : "url_alias` ");
 		$sql .= "WHERE query LIKE 'category_id=%' ";
@@ -3975,21 +3865,23 @@ class Controllerapismpextension extends Controller
 				$store_id = $row['store_id'];
 				$language_id = $row['language_id'];
 				$seo_url_id = $row['seo_url_id'];
+				$keyword = $row['keyword'];
 
-				$seo_keywords[$category_id][$store_id][$language_id] = $seo_url_id;
+				$seo_keywords[$category_id][$store_id][$language_id] = ($need_keywords ? $keyword : $seo_url_id);
 			}
 		} else { // Opencart 2
 			foreach ($query->rows as $row) {
 				$category_id = (int)substr($row['query'], 12);
 				$url_alias_id = $row['url_alias_id'];
-				$seo_keywords[$category_id] = $url_alias_id;
+				$keyword = $row['keyword'];
+				$seo_keywords[$category_id] = ($need_keywords ? $keyword : $url_alias_id);
 			}
 		}
 
 		return $seo_keywords;
 	}
 
-	protected function getProductSEOKeywords()
+	protected function getProductSEOKeywords($need_keywords = false)
 	{
 		$sql  = "SELECT * FROM `" . DB_PREFIX . ($this->use_table_seo_url ? "seo_url` " : "url_alias` ");
 		$sql .= "WHERE query LIKE 'product_id=%' ";
@@ -4002,14 +3894,16 @@ class Controllerapismpextension extends Controller
 				$store_id = $row['store_id'];
 				$language_id = $row['language_id'];
 				$seo_url_id = $row['seo_url_id'];
+				$keyword = $row['keyword'];
 
-				$seo_keywords[$product_id][$store_id][$language_id] = $seo_url_id;
+				$seo_keywords[$product_id][$store_id][$language_id] = ($need_keywords ? $keyword : $seo_url_id);
 			}
 		} else {
 			foreach ($query->rows as $row) {
 				$product_id = (int)substr($row['query'], 11);
 				$url_alias_id = $row['url_alias_id'];
-				$seo_keywords[$product_id] = $url_alias_id;
+				$keyword = $row['keyword'];
+				$seo_keywords[$product_id] = ($need_keywords ? $keyword : $url_alias_id);
 			}
 		}
 
