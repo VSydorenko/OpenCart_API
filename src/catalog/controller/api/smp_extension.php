@@ -26,7 +26,7 @@ class Controllerapismpextension extends Controller
 	 **/
 	public function update_quantity_price()
 	{
-
+		
 		$return_array = []; 
 		$this->response->addHeader('Content-Type: application/json');
 		$use_options = (int)$this->request->get['use_options']; # 0/1 
