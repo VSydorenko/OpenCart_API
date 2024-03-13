@@ -96,7 +96,7 @@ class Controllerapismpextension extends Controller
 					$price_prefix = $option_data['price_prefix'];
 
 					$sql_option_upd .= ($first_option) ? '' : ', ';
-					$sql_option_upd .= "($product_option_value_id, $option_quantity, $option_price, $price_prefix)";
+					$sql_option_upd .= "($product_option_value_id, $option_quantity, $option_price, '$price_prefix')";
 
 					$first_option = false;
 
@@ -111,24 +111,38 @@ class Controllerapismpextension extends Controller
 				$first_del_special = false;
 
 				foreach ($product_special as $special) {
+
+					$customer_group_id = $special['customer_group_id'];
+					$priority = $special['priority'];
+					$price = $special['price'];
+					$date_start = $special['date_start'];
+					$date_end = $special['date_end'];
 					
 					$sql_product_special .= ($first_special) ? '' : ', ';
-					$sql_product_special .= "($product_id, $special['customer_group_id'], $special['priority'], $special['price'], $special['date_start'], $special['date_end'])";
+					$sql_product_special .= "($product_id, $customer_group_id, $priority, $price, '$date_start', '$date_end')";
 					$first_special = false;
 
 				}
 			}
 
 			# Discounts
-			if (!emty($product_discount)) {
+			if (!empty($product_discount)) {
 				
 				$sql_del_discount .= ($first_del_discount) ? '' : ', ';
 				$sql_del_discount .= "$product_id";
 				$first_del_discount = false;
 
 				foreach ($product_discount as $discount) {
+
+					$customer_group_id = $discount['customer_group_id'];
+					$quantity = $discount['quantity'];
+					$priority = $discount['priority'];
+					$price = $discount['price'];
+					$date_start = $discount['date_start'];
+					$date_end = $discount['date_end'];
+
 					$sql_product_discount .= ($first_dicount) ? '' : ', ';
-					$sql_product_discount .= "($product_id, $discount['customer_group_id'], $discount['quantity'], $discount['priority'], $discount['price'], $discount['date_start'], $discount['date_end'])";
+					$sql_product_discount .= "($product_id, $customer_group_id, $quantity, $priority, $price, '$date_start', '$date_end')";
 					$first_dicount = false;
 				}
 
@@ -136,12 +150,12 @@ class Controllerapismpextension extends Controller
 
 		}
 
-		$sql_product_upd .= ' ON DUPLICATE KEYS UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `date_modified`=VALUES(`date_modified`)';
+		$sql_product_upd .= ' ON DUPLICATE KEY UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `date_modified`=VALUES(`date_modified`)';
 		$this->db->query($sql_product_upd);
 
 		if ($use_options) {
 
-			$sql_option_upd .= ' ON DUPLICATE KEYS UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `price_prefix`=VALUES(`price_prefix`)';
+			$sql_option_upd .= ' ON DUPLICATE KEY UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `price_prefix`=VALUES(`price_prefix`)';
 			$this->db->query($sql_option_upd);
 
 		}
@@ -165,7 +179,7 @@ class Controllerapismpextension extends Controller
 		}
 
 		zip_close($zipArc);
-		ulink($filename);
+		unlink($filename);
 
 		$return_array['success'] = 'Prices and quantity updated';
 		$this->response->setOutput(json_encode($return_array));
@@ -749,6 +763,7 @@ class Controllerapismpextension extends Controller
 
 		$this->response->addHeader('Content-Type: application/json');
 
+		$uploading_changes = (int)$this->request->get['changes']; // mark that this is uploading only changes, not full update
 		$overwrite = (int)$this->request->get['overwrite']; // overwrite all existing images for all products
 
 		$return_array = array();
@@ -775,19 +790,96 @@ class Controllerapismpextension extends Controller
 				//$image_not_delete = array();
 
 				$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-				$product_array = json_decode(htmlspecialchars_decode($dump));
+				$product_array = json_decode(htmlspecialchars_decode($dump), true);
 
 				foreach ($product_array as $product_data) {
 
-					$product_id = $product_data->{'product_id'};
-					$folder_name = urldecode($this->db->escape($product_data->{'folder_name'}));
-					$current_images = $product_data->{'current_images'};
-					$new_images = $product_data->{'new_images'};
+					$product_id = $product_data['product_id'];
+					$folder_name = urldecode($this->db->escape($product_data['folder_name']));
+					$current_images = $product_data['current_images'];
+					$new_images = $product_data['new_images'];
 
 					$full_folder_path = DIR_IMAGE . 'catalog/image1c/' . $folder_name . '/';
 					$rel_folder_path  = 'catalog/image1c/' . $folder_name . '/';
 
-					if ($overwrite == 1) { // delete all existing images for product and add new
+					if ($uploading_changes === 1) { // add new or update just one image
+
+						foreach ($current_images as $img_description) { // updating current images
+							
+							$img_id = (int)$img_description['image_id'];
+							$ref = $img_description['ref'];
+							$main_image = $img_description['main_image'];
+							$filename = urldecode($this->db->escape($img_description['filename']));
+							$extension = $img_description['extension'];
+							$sort_order = $img_description['sort_order'];
+
+							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
+
+							if ($main_image == 1) {
+								
+								$query_main = $this->db->query("SELECT image FROM `" . DB_PREFIX ."product` WHERE product_id = $product_id");
+								$current_path = $query_main->row['image'];
+
+								if (!empty($current_path)) {
+									$path = DIR_IMAGE . $current_path;
+									if (file_exists($path)) {
+										unlink($path);
+									} 
+								}
+									
+								$this->db->query("UPDATE `" . DB_PREFIX . "product` SET image = '" . $this->db->escape($rel_img_path) . "' WHERE product_id = $product_id");
+								$return_desc = array('product_image_id' => 0, 'server_path' => urlencode($rel_img_path));
+								$return_data[$ref] = $return_desc;								
+
+							} else {
+								
+								$query_sec = $this->db->query("SELECT * FROM `" . DB_PREFIX . "product_image` WHERE product_id = $product_id AND product_image_id = $img_id");
+								$current_path = $query_sec->row['image'];
+
+								if (!empty($current_path)) {
+									$path = DIR_IMAGE . $current_path;
+									if (file_exists($path)) {
+										unlink($path);
+									} 
+								}
+
+								$this->db->query("UPDATE `" . DB_PREFIX . "product_image` SET image = '" . $this->db->escape($rel_img_path) . "', sort_order = $sort_order WHERE product_id = $product_id AND product_image_id = $img_id");
+								$return_desc = array('product_image_id' => $img_id, 'server_path' => urlencode($rel_img_path));
+								$return_data[$ref] = $return_desc;
+
+							}
+
+						}
+
+						$max_image_id = $this->GetMaxProductimageId();
+
+						foreach ($new_images as $img_description) { // adding new images
+							
+							$ref = $img_description['ref'];
+							$main_image = $img_description['main_image'];
+							$filename = urldecode($this->db->escape($img_description['filename']));
+							$extension = $img_description['extension'];
+							$sort_order = $img_description['sort_order'];
+
+							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
+
+							if ($main_image == 1) {
+
+								$this->db->query("UPDATE `" . DB_PREFIX . "product` SET image = '" . $this->db->escape($rel_img_path) . "' WHERE product_id = $product_id");
+								$return_desc = array('product_image_id' => 0, 'server_path' => urlencode($rel_img_path));
+								$return_data[$ref] = $return_desc;
+							} else {
+
+								$max_image_id++;
+								$this->db->query("INSERT INTO `" . DB_PREFIX . "product_image` (`product_image_id`, `product_id`, `image`, `sort_order`) VALUES (" . $max_image_id . ", " . $product_id . ", '" . $this->db->escape($rel_img_path) . "', $sort_order)");
+								$return_desc = array('product_image_id' => $max_image_id, 'server_path' => urlencode($rel_img_path));
+								$return_data[$ref] = $return_desc;
+							}
+
+						}
+
+
+					} elseif ($overwrite === 1) { // delete all existing images for product and add new
 
 						$directories_for_del = array();
 
@@ -807,11 +899,11 @@ class Controllerapismpextension extends Controller
 
 						foreach ($new_images as $img_description) {
 
-							$ref = $img_description->{'ref'};
-							$main_image = $img_description->{'main_image'};
-							$filename = urldecode($this->db->escape($img_description->{'filename'}));
-							$extension = $img_description->{'extension'};
-							$sort_order = $img_description->{'sort_order'};
+							$ref = $img_description['ref'];
+							$main_image = $img_description['main_image'];
+							$filename = urldecode($this->db->escape($img_description['filename']));
+							$extension = $img_description['extension'];
+							$sort_order = $img_description['sort_order'];
 
 							#$rel_img_path = $rel_folder_path . $filename . '.' . $extension;
 							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
@@ -829,6 +921,7 @@ class Controllerapismpextension extends Controller
 								$return_data[$ref] = $return_desc;
 							}
 						}
+
 					} else {
 
 						# Сначала заполняем массив текущими идентификаторами вторичных изображений
@@ -846,14 +939,14 @@ class Controllerapismpextension extends Controller
 						$mainImageExist = false;
 						foreach ($current_images as $current_img_desc) {
 
-							$main_image = $current_img_desc->{'main_image'};
+							$main_image = $current_img_desc['main_image'];
 							if ($main_image == 1) {
 								$mainImageExist = true;
 								continue;
 							}
 
-							$img_id = (int)$current_img_desc->{'image_id'};
-							$s_order = (int)$current_img_desc->{'sort_order'};
+							$img_id = (int)$current_img_desc['image_id'];
+							$s_order = (int)$current_img_desc['sort_order'];
 
 							# Ищем по идентификатору, обновляем порядок сортировки
 							$curr_sort_order = $arr_sec_images[$img_id];
@@ -909,11 +1002,11 @@ class Controllerapismpextension extends Controller
 
 						foreach ($new_images as $img_description) {
 
-							$ref = $img_description->{'ref'};
-							$main_image = $img_description->{'main_image'};
-							$filename = urldecode($this->db->escape($img_description->{'filename'}));
-							$extension = $img_description->{'extension'};
-							$sort_order = $img_description->{'sort_order'};
+							$ref = $img_description['ref'];
+							$main_image = $img_description['main_image'];
+							$filename = urldecode($this->db->escape($img_description['filename']));
+							$extension = $img_description['extension'];
+							$sort_order = $img_description['sort_order'];
 
 							#$rel_img_path = $rel_folder_path . $filename . '.' . $extension;
 							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
@@ -1065,13 +1158,13 @@ class Controllerapismpextension extends Controller
 				if (zip_entry_open($zipArc, $zip_entry, "r")) {
 
 					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-					$image_data = json_decode(htmlspecialchars_decode($dump));
+					$image_data = json_decode(htmlspecialchars_decode($dump), true);
 
-					$ref = $image_data->{'ref'};
-					$filename = urldecode($this->db->escape($image_data->{'filename'}));
-					$folder_name = urldecode($this->db->escape($image_data->{'path'}));
-					$extension = $image_data->{'extension'};
-					$image_f = base64_decode($image_data->{'image_data'});
+					$ref = $image_data['ref'];
+					$filename = urldecode($this->db->escape($image_data['filename']));
+					$folder_name = urldecode($this->db->escape($image_data['path']));
+					$extension = $image_data['extension'];
+					$image_f = base64_decode($image_data['image_data']);
 					$namef_with_dir = DIR_IMAGE . 'catalog/image1c/' . $folder_name . '/' . $ref . '.' . $extension;
 					$dirname_namef = dirname($namef_with_dir);
 
