@@ -2119,7 +2119,9 @@ class Controllerapismpextension extends Controller
 		order_table.commission, 
 		order_table.marketing_id, 
 		order_table.date_added, 
-		order_table.date_modified
+		order_table.date_modified, 
+		order_table.currency_code, 
+		ROUND(order_table.currency_value, 4) AS currency_value
 		FROM `" . DB_PREFIX . "order` AS order_table";
 
 		$sql .= " WHERE order_table.order_id > $last_order_id";
