@@ -337,8 +337,12 @@ class ModelCatalogSmpoc2Product extends Model {
 
 	public function deleteProduct($product_id) {
 
-		 // OCFilter start
-		 $this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_filter_value_to_product WHERE product_id = '" . $this->db->escape((string)$product_id) . "'");
+		 
+		// OCFilter start
+		$query = $this->db->query("SHOW TABLES LIKE '" . DB_PREFIX . "ocfilter_filter_value_to_product'");
+		if ($query->num_rows > 0) {
+			$this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_filter_value_to_product WHERE product_id = '" . $this->db->escape((string)$product_id) . "'");
+		}
 		 // OCFilter end
 		
 		$this->db->query("DELETE FROM " . DB_PREFIX . "product WHERE product_id = '" . (int)$product_id . "'");

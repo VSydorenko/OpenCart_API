@@ -421,9 +421,12 @@ class ModelCatalogSmpProduct extends Model {
 
 	public function deleteProduct($product_id) {
 
-    // OCFilter start
-    $this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_filter_value_to_product WHERE product_id = '" . $this->db->escape((string)$product_id) . "'");
-    // OCFilter end
+   		// OCFilter start
+		$query = $this->db->query("SHOW TABLES LIKE '" . DB_PREFIX . "ocfilter_filter_value_to_product'");
+		if ($query->num_rows > 0) {
+   			$this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_filter_value_to_product WHERE product_id = '" . $this->db->escape((string)$product_id) . "'");
+		}
+    	// OCFilter end
       
 		$this->db->query("DELETE FROM " . DB_PREFIX . "product WHERE product_id = '" . (int)$product_id . "'");
 		$this->db->query("DELETE FROM " . DB_PREFIX . "product_attribute WHERE product_id = '" . (int)$product_id . "'");
@@ -447,9 +450,6 @@ class ModelCatalogSmpProduct extends Model {
 		$this->db->query("DELETE FROM " . DB_PREFIX . "seo_url WHERE query = 'product_id=" . (int)$product_id . "'");
 		$this->db->query("DELETE FROM " . DB_PREFIX . "coupon_product WHERE product_id = '" . (int)$product_id . "'");
 	
-		$this->db->query("DELETE FROM " . DB_PREFIX . "prostore_blog_related_prod WHERE related_id = '" . (int)$product_id . "'");// prostore add this
-			
-
 		$this->cache->delete('product');
 		
 		if($this->config->get('config_seo_pro')){		
