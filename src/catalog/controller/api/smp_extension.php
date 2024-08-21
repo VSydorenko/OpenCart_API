@@ -2350,10 +2350,10 @@ class Controllerapismpextension extends Controller
 			$query = $this->db->query($sql);
 			$exist_meta_title = ($query->num_rows > 0) ? true : false;
 
-			$image_exist = (int)$this->request->get['img']; // признак загрузки изображений категорий
-			$seo_update = (int)$this->request->get['seo_update']; // признак обновления SEO
+			$upd_tags = (int)$this->request->get['tags']; // запись/обновление мета-тэгов
+			$upd_desc = (int)$this->request->get['desc']; // запись/обновление описания
+			$upd_seo = (int)$this->request->get['seo']; // запись/обновление SEO URL
 			
-
 			$first_category = true;
 			$sql_category = "INSERT INTO `" . DB_PREFIX . "category` (
 				`category_id`, 
@@ -2400,8 +2400,6 @@ class Controllerapismpextension extends Controller
 				$category_id_max = (int)$row['category_id'];
 			}
 
-			//$i = 1;
-
 			$first_delete_path = true;
 			$sql_first_delete_path = "DELETE FROM `" . DB_PREFIX . "category_path` WHERE category_id IN (";
 			$sql_second_delete_path = "DELETE FROM `" . DB_PREFIX . "category_path` WHERE path_id IN (";
@@ -2431,8 +2429,6 @@ class Controllerapismpextension extends Controller
 
 					foreach ($data_array as $category) {
 
-						//$category_id_source = $category->{'category_id'}; // для проверки при формировании текста запроса к таблице "category_description"
-
 						$category_id = $category->{'category_id'};
 						$cat_ref_1c = $category->{'ref'}; // 1С-ный УИД категории
 						$parent_ref_1c = $category->{'parent_ref'}; // 1С-ный УИД категории-родителя
@@ -2455,9 +2451,6 @@ class Controllerapismpextension extends Controller
 						};
 
 						$cat_ids[$cat_ref_1c] = $category_id;
-
-						//$names = $this->object_to_array($data->{'names'});
-						// extract the category details
 
 						$image = $category->{'image'};
 
@@ -2518,24 +2511,14 @@ class Controllerapismpextension extends Controller
 							$meta_keyword = isset($meta_keywords[$language_code]) ? urldecode($this->db->escape($meta_keywords[$language_code])) : '';
 
 							if ($exist_meta_title) {
-
-								//$sql_category_description .= ($first_category_description ) ? "" : ","; // Не нужно
-								//$sql_category_description .= " ( $category_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword' ) ";
-
 								$desc_value = " ( $category_id, $language_id, '$name', '$description', '$meta_title', '$meta_description', '$meta_keyword' ) ";
 							} else {
-
-								//$sql_category_description .= ($first_category_description ) ? "" : ","; // Не нужно
-								//$sql_category_description .= " ( $category_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword' ) ";
-
 								$desc_value = " ( $category_id, $language_id, '$name', '$description', '$meta_description', '$meta_keyword' ) ";
 							}
 
-							//if ($parent_id > 0 or $category_id_source == 0) {
 							$category_desc_values[] = $desc_value;
-							//}
 
-							if ($this->use_table_seo_url) { # SEO URLs for Opencart 3 
+							if ($this->use_table_seo_url && $upd_seo) { # SEO URLs for Opencart 3 
 
 								if (isset($keywords[$language_code])) {
 
@@ -2560,7 +2543,7 @@ class Controllerapismpextension extends Controller
 							$first_category_description = false;
 						}
 
-						if (!$this->use_table_seo_url) { # SEO URLs for Opencart 2
+						if (!$this->use_table_seo_url && $upd_seo) { # SEO URLs for Opencart 2
 
 							$keyword = array_shift($keywords);
 							if (isset($keyword)) {
@@ -2626,32 +2609,11 @@ class Controllerapismpextension extends Controller
 							$first_category_to_layout = false;
 						}
 
-						//$vozvrat_json[$category->{'ref'}]= $category_id;
-						//$i++;
-
-					} //перебор переданного массива
-
-					/*if (!$first_delete_path) {
-					
-						$sql_first_delete_path .=");";
-						
-						$this->db->query($sql_first_delete_path ); // Временно!
-						//$logger->write("\n" . $sql_first_delete_path . "\n\n");
-					
-						$sql_second_delete_path .=");";
-						//$logger->write("\n" . $sql_second_delete_path . "\n\n");
-
-						$this->db->query($sql_second_delete_path);
-					}*/
+					}
 
 					if (!$first_category) {
 
 						$sql_category .= " ON DUPLICATE KEY UPDATE  ";
-
-						if ($image_exist == 1) {
-							//$sql_category .= "`image`= VALUES(`image`),";
-						}
-
 						$sql_category .= "`parent_id`= VALUES(`parent_id`),";
 						//$sql_category .= "`top`= VALUES(`top`),";
 						//$sql_category .= "`column`= VALUES(`column`),";
@@ -2676,40 +2638,22 @@ class Controllerapismpextension extends Controller
 							}
 
 							$sql_category_description = rtrim($sql_category_description, ",");
-
-							if ($exist_meta_title) {
-
-								$sql_category_description .= " ON DUPLICATE KEY UPDATE  ";
-								$sql_category_description .= "`name`= VALUES(`name`)";
+							$sql_category_description .= " ON DUPLICATE KEY UPDATE  ";
+							$sql_category_description .= "`name`= VALUES(`name`)";
+							
+							if ($upd_desc == 1) { 
 								$sql_category_description .= ",`description`= VALUES(`description`)";
-
-								if ($seo_update == 1) {
-									$sql_category_description .= ",`meta_title`= VALUES(`meta_title`)";
-									$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
-									$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
-								}
-
-								$sql_category_description .= ";";
-
-								$this->db->query($sql_category_description); // Временно!
-								//$logger->write("\n" . $sql_category_description . "\n\n");
-
-							} else {
-
-								$sql_category_description .= " ON DUPLICATE KEY UPDATE  ";
-								$sql_category_description .= "`name`= VALUES(`name`)";
-								$sql_category_description .= ",`description`= VALUES(`description`)";
-
-								if ($seo_update == 1) {
-									$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
-									$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
-								}
-
-								$sql_category_description .= ";";
-
-								$this->db->query($sql_category_description); // Временно!
-								//$logger->write("\n" . $sql_category_description . "\n\n");
 							}
+
+							if ($upd_tags == 1) {
+								$sql_category_description .= $exist_meta_title ? ",`meta_title`= VALUES(`meta_title`)" : '';
+								$sql_category_description .= ",`meta_description`= VALUES(`meta_description`)";
+								$sql_category_description .= ",`meta_keyword`= VALUES(`meta_keyword`)";
+							}
+
+							$sql_category_description .= ";";
+							$this->db->query($sql_category_description);
+
 						}
 					}
 
@@ -2768,13 +2712,11 @@ class Controllerapismpextension extends Controller
 
 		$this->load->language('api/product');
 
-		#$type_option  = $this->request->get['type_option'];
-
-		$seo_update   = (int)$this->request->get['seo_update'];
-		$description_update = (int)$this->request->get['description_update'];
+		$upd_tags = (int)$this->request->get['tags']; // запись/обновление мета-тэгов
+		$upd_desc = (int)$this->request->get['desc']; // запись/обновление описания
+		$upd_seo = (int)$this->request->get['seo']; // запись/обновление SEO URL
 
 		$json_return = array();
-		#$vozvrat_json = array();
 
 		$image_f = file_get_contents('php://input');
 		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
@@ -2857,18 +2799,18 @@ class Controllerapismpextension extends Controller
 			$firstsql_product_to_store  = true;
 			$sql_product_to_store = "INSERT INTO `" . DB_PREFIX . "product_to_store` (`product_id`,`store_id`) VALUES ";
 
+			$first_url_alias  = true;
+			$first_url_aliasUPDATE  = true;
 			if ($this->use_table_seo_url) { # Opencart 3
-				$first_url_alias  = true;
+				
 				$sql_url_alias = "INSERT INTO `" . DB_PREFIX . "seo_url` (`keyword`,`query`,`store_id`,`language_id`) VALUES ";
-
-				$first_url_aliasUPDATE  = true;
 				$sql_url_aliasUPDATE = "INSERT INTO `" . DB_PREFIX . "seo_url` (`seo_url_id`,`keyword`,`query`,`store_id`,`language_id`) VALUES ";
-			} else { # Opencart 2
-				$first_url_alias  = true;
-				$sql_url_alias = "INSERT INTO `" . DB_PREFIX . "url_alias` (`keyword`,`query`) VALUES ";
 
-				$first_url_aliasUPDATE  = true;
+			} else { # Opencart 2
+				
+				$sql_url_alias = "INSERT INTO `" . DB_PREFIX . "url_alias` (`keyword`,`query`) VALUES ";
 				$sql_url_aliasUPDATE = "INSERT INTO `" . DB_PREFIX . "url_alias` (`url_alias_id`,`keyword`,`query`) VALUES ";
+
 			}
 
 			$first_category_id = true;
@@ -2882,23 +2824,11 @@ class Controllerapismpextension extends Controller
 			$first_product_filter = true;
 			$sql_product_filter = "INSERT INTO `" . DB_PREFIX . "product_filter` (`product_id`,`filter_id`) VALUES ";
 
-			#$first_product_option = true;
-			#$sql_product_option = "INSERT INTO `".DB_PREFIX."product_option` (`product_option_id`,`product_id`,`option_id`,`value`,`required`) VALUES ";			
-
-			#$first_product_option_value = true; 
-			#$sql_product_option_value = "INSERT INTO `".DB_PREFIX."product_option_value` (`product_option_id`,`product_id`,`option_id`,`option_value_id`,`quantity`,`subtract`,`price`,`price_prefix`,`points`,`points_prefix`,`weight`,`weight_prefix`) VALUES ";
-
-			#$first_del_product_option_value= true;
-			#$sql_del_product_option_value = "DELETE FROM `".DB_PREFIX."product_option_value` WHERE product_id IN (";
-
 			$first_del_product_attribute = true;
 			$sql_del_product_attribute = "DELETE FROM `" . DB_PREFIX . "product_attribute` WHERE product_id IN (";
 
 			$first_del_product_filter = true;
 			$sql_del_product_filter = "DELETE FROM `" . DB_PREFIX . "product_filter` WHERE product_id IN (";
-
-			#$first_delete_product_option = true;
-			#$sql_delete_product_option = "DELETE FROM `".DB_PREFIX."product_option` WHERE product_id IN (";
 
 			$first_delete_path = true;
 			$sql_first_delete_path = "DELETE FROM `" . DB_PREFIX . "product_to_category` WHERE product_id IN (";
@@ -2945,19 +2875,6 @@ class Controllerapismpextension extends Controller
 				$sql_product_description  .= ") VALUES ";
 			}
 
-			/*
-			$sql = "Select max(`product_option_id`) as `product_option_id` from `".DB_PREFIX."product_option`;";
-			$result = $this->db->query( $sql );
-			$product_option_id = 0;
-
-			foreach ($result->rows as $row) {
-				$product_option_id = (int)$row['product_option_id'];
-				$product_option_id++;
-			}
-
-			$ProductOption = $this->getProductOption();
-			*/
-
 			$pack_number = 1;
 
 			while ($zip_entry = zip_read($zipArc)) {
@@ -2999,7 +2916,7 @@ class Controllerapismpextension extends Controller
 						$manufacturer_name = urldecode($this->db->escape($data->{'manufacturer_name'}));
 						$manufacturer_image = urldecode($this->db->escape($data->{'manufacturer_image'}));
 						$manufacturer_description = urldecode($this->db->escape($data->{'manufacturer_description'}));
-						$manufacturer_keyword = urldecode($this->db->escape($data->{'keyword_manufacturer'}));
+						$manufacturer_keyword = urldecode($this->db->escape($data->{'manufacturer_keyword'}));
 						$language_id_u = $data->{'language_id_u'};
 
 						#$image = $data->{'image'};
@@ -3138,11 +3055,10 @@ class Controllerapismpextension extends Controller
 								}
 								$sql_product_description  .= ")";
 
-								if (($seo_update == 1) or ($insert == 1)) {
-									$sql_product_tag  .= ($first_product_tag) ? "" : ",";
-									$sql_product_tag  .= " ($product_id, $language_id, '$tag') ";
-									$first_product_tag  = false;
-								}
+								$sql_product_tag  .= ($first_product_tag) ? "" : ",";
+								$sql_product_tag  .= " ($product_id, $language_id, '$tag') ";
+								$first_product_tag  = false;
+								
 							} else {
 
 								$sql_product_description  .= ($first_product_description) ? "" : ",";
@@ -3157,7 +3073,7 @@ class Controllerapismpextension extends Controller
 								$sql_product_description  .= ")";
 
 								if ($this->use_table_seo_url) {
-									if (isset($keywords[$language_code])) { # and (($seo_update == 1) or ($insert == 1))
+									if (isset($keywords[$language_code])) {
 
 										$keyword = isset($keywords[$language_code]) ? urldecode($this->db->escape($keywords[$language_code])) : '';
 
@@ -3297,58 +3213,6 @@ class Controllerapismpextension extends Controller
 						$pd_opt_data['product_options'] = $options;
 						$product_options_data[] = $pd_opt_data;
 
-						/*
-                        if (!empty($type_option)) {
-                            if (count($options) == 0) {
-                                $sql_delete_product_option .= ($first_delete_product_option ) ? "" : ",";
-                                $sql_delete_product_option .= " $product_id ";
-                                $first_delete_product_option = false;
-                            } else {
-
-                                $option_id = 0;
-                                $option_vid = array();
-
-                                foreach ($options as $option) {
-                                    $option_id = $option->{'option_id'};
-                                    if (isset($ProductOption[$product_id][$option_id]) ) {
-                                        $option_vid[$option_id] = $ProductOption[$product_id][$option_id];
-                                    }
-
-                                    if ((!isset($ProductOption[$product_id][$option_id])) and (!isset($option_vid[$option_id]))) {
-                                        $sql_product_option .= ($first_product_option ) ? "" : ",";
-                                        $sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
-                                        $first_product_option = false;
-                                        $product_option_id_t = $product_option_id;
-                                        $product_option_id++;
-                                        $option_vid[$option_id] = $product_option_id_t;
-                                    } else {
-                                        $product_option_id_t = $option_vid[$option_id];
-                                    }
-
-                                    $option_value_id = $option->{'option_value_id'};
-                                    $quantity = $option->{'quantity'};
-                                    $subtract = $option->{'subtract'};
-                                    $price = $option->{'price'};
-                                    $price_prefix = $option->{'price_prefix'};
-                                    $points = $option->{'points'};
-                                    $points_prefix = $option->{'points_prefix'};
-                                    $weight = $option->{'weight'};
-                                    $weight_prefix = $option->{'weight_prefix'};
-
-                                    $sql_product_option_value .= ($first_product_option_value ) ? "" : ",";
-                                    $sql_product_option_value .= "  ($product_option_id_t, $product_id, $option_id, $option_value_id ,$quantity,$subtract,$price,'$price_prefix',$points,'$points_prefix', $weight,'$weight_prefix') ";
-
-                                    $first_product_option_value = false;
-                                } //foreach ($options as $option)
-                            } //(count($options) == 0)
-
-                            $sql_del_product_option_value .= ($first_del_product_option_value) ? "" : ",";
-                            $sql_del_product_option_value .= " $product_id ";
-                            $first_del_product_option_value= false;
-
-                        } //if (!empty($type_option))
-						*/
-
 						$sql_delete_product_special .= ($first_delete_product_special) ? "" : ",";
 						$sql_delete_product_special .= " $product_id ";
 						$first_delete_product_special = false;
@@ -3392,7 +3256,7 @@ class Controllerapismpextension extends Controller
 							}
 						}
 
-						#$vozvrat_json[$data->{'ref'}] = $product_id;
+						
 						$pack_number++;
 					} //foreach ($data_array as $data) // Конец перебора массива продуктов
 				} //if (zip_entry_open($zipArc, $zip_entry, "r"))
@@ -3478,68 +3342,15 @@ class Controllerapismpextension extends Controller
 				$this->db->query($sql_first_delete_path);
 			}
 
-			/*
-            if (!$first_delete_product_option) {
-                $sql_delete_product_option .=");";
-                //$this->db->query($sql_delete_product_option ); //Временно!
-				$logger->write("\n" . $sql_delete_product_option . "\n\n");
-            }
-			*/
-
-			/*
-			if (!$first_del_product_attribute) {
-				$sql_del_product_attribute .= ");";
-				$this->db->query($sql_del_product_attribute);
-			}
-			*/
-
 			if (!$first_del_product_filter) {
 				$sql_del_product_filter .= ");";
 				$this->db->query($sql_del_product_filter);
 			}
 
-			/*
-			if (!$first_product_attribute) {
-				$sql_product_attribute .= ";";
-				$this->db->query($sql_product_attribute);
-			}
-			*/
-
 			if (!$first_product_filter) {
 				$sql_product_filter .= ";";
 				$this->db->query($sql_product_filter);
 			}
-
-			/*
-            if (!$first_product_option ) {
-                $sql_product_option .=";";
-                //$this->db->query($sql_product_option ); //Временно!
-				$logger->write("\n" . $sql_product_option . "\n\n");
-            }
-
-            if (!$first_del_product_option_value) {
-                $sql_del_product_option_value .=");";
-                //$this->db->query($sql_del_product_option_value ); //Временно!
-				$logger->write("\n" . $sql_del_product_option_value . "\n\n");
-            }
-
-            if (!$first_product_option_value ) {
-                $sqlproduct_option_value_id = "Select max(`product_option_value_id`) as `product_option_value_id` from `".DB_PREFIX."product_option_value`;";
-                $resultproduct_option_value = $this->db->query( $sqlproduct_option_value_id );
-                $product_option_idproduct_option_value = 1;
-
-                foreach ($resultproduct_option_value ->rows as $row) {
-                    $product_option_idproduct_option_value = (int)$row['product_option_value_id'];
-                    $product_option_idproduct_option_value++;
-                }
-                $sqlproduct_option_value_id = "ALTER TABLE `".DB_PREFIX."product_option_value` AUTO_INCREMENT=$product_option_idproduct_option_value;";
-                $this->db->query($sqlproduct_option_value_id);
-
-                $sql_product_option_value .=";";
-                //$this->db->query($sql_product_option_value); //Временно!
-				$logger->write("\n" . $sql_product_option_value . "\n\n");
-            }
-			*/
 
 			if (!$first_product_special) {
 				$sql_product_special .= ";";
@@ -3553,57 +3364,30 @@ class Controllerapismpextension extends Controller
 
 			if (!$first_product_description) {
 				$sql_product_descriptionDUPLICATE = " ON DUPLICATE KEY UPDATE  ";
-				if ($exist_table_product_tag) {
-					if ($exist_meta_title) {
-						$sql_product_descriptionDUPLICATE .= "`name`= VALUES(`name`)";
-						if ($description_update == 1) {
-							$sql_product_descriptionDUPLICATE .= ",`description`= VALUES(`description`)";
-						}
-						if (($seo_update == 1) or ($insert == 1)) {
-							$sql_product_descriptionDUPLICATE .= ",`meta_title`= VALUES(`meta_title`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_description`= VALUES(`meta_description`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_keyword`= VALUES(`meta_keyword`)";
-						}
-					} else {
-						$sql_product_descriptionDUPLICATE .= "`name`= VALUES(`name`)";
-						if ($description_update == 1) {
-							$sql_product_descriptionDUPLICATE .= ",`description`= VALUES(`description`)";
-						}
-						if (($seo_update == 1) or ($insert == 1)) {
-							$sql_product_descriptionDUPLICATE .= ",`meta_description`= VALUES(`meta_description`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_keyword`= VALUES(`meta_keyword`)";
-						}
-					}
-				} else {
-					if ($exist_meta_title) {
-						$sql_product_descriptionDUPLICATE .= "`name`= VALUES(`name`)";
-						if ($description_update == 1) {
-							$sql_product_descriptionDUPLICATE .= ",`description`= VALUES(`description`)";
-						}
-						if (($seo_update == 1) or ($insert == 1)) {
-							$sql_product_descriptionDUPLICATE .= ",`meta_title`= VALUES(`meta_title`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_description`= VALUES(`meta_description`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_keyword`= VALUES(`meta_keyword`),";
-							$sql_product_descriptionDUPLICATE .= "`tag`= VALUES(`tag`)";
-						}
-					} else {
-						$sql_product_descriptionDUPLICATE .= "`name`= VALUES(`name`)";
-						if ($description_update == 1) {
-							$sql_product_descriptionDUPLICATE .= ",`description`= VALUES(`description`)";
-						}
-						if (($seo_update == 1) or ($insert == 1)) {
-							$sql_product_descriptionDUPLICATE .= ",`meta_description`= VALUES(`meta_description`),";
-							$sql_product_descriptionDUPLICATE .= "`meta_keyword`= VALUES(`meta_keyword`),";
-							$sql_product_descriptionDUPLICATE .= "`tag`= VALUES(`tag`)";
-						}
-					}
-				}
-				if ($exist_meta_h1) {
-					if (($seo_update == 1) or ($insert == 1)) {
-						$sql_product_descriptionDUPLICATE .= ",`meta_h1`= VALUES(`meta_h1`)";
-					}
+				$sql_product_descriptionDUPLICATE .= "`name`= VALUES(`name`)";
+				
+				if ($upd_desc == 1) {
+					$sql_product_descriptionDUPLICATE .= ", `description`= VALUES(`description`)";
 				}
 
+				if ($upd_tags == 1) {
+					
+					if ($exist_meta_title) {
+						$sql_product_descriptionDUPLICATE .= ", `meta_title`= VALUES(`meta_title`)";
+					}
+
+					$sql_product_descriptionDUPLICATE .= ", `meta_description`= VALUES(`meta_description`)";
+					$sql_product_descriptionDUPLICATE .= ", `meta_keyword`= VALUES(`meta_keyword`)";
+
+					if ($exist_meta_h1) {
+						$sql_product_descriptionDUPLICATE .= ", `meta_h1`= VALUES(`meta_h1`)";
+					}
+
+					if (!$exist_table_product_tag) {
+						$sql_product_descriptionDUPLICATE .= ", `tag`= VALUES(`tag`)";
+					}
+				}
+				
 				#$sql_product_descriptionDUPLICATE .= ", `care` = VALUES(`care`)";
 				#$sql_product_descriptionDUPLICATE .= ", `advantages` = VALUES(`advantages`)";
 
@@ -3612,7 +3396,7 @@ class Controllerapismpextension extends Controller
 				$this->db->query($sql_product_description);
 			}
 
-			if (!$first_product_tag) {
+			if (!$first_product_tag && $upd_tags == 1) {
 				$sql_product_tag  .= " ON DUPLICATE KEY UPDATE  ";
 				$sql_product_tag  .= "`tag`= VALUES(`tag`)";
 				$sql_product_tag  .= ";";
@@ -3628,14 +3412,14 @@ class Controllerapismpextension extends Controller
 				$this->db->query($sql_category_id);
 			}
 
-			if (!$first_url_aliasUPDATE) {
+			if (!$first_url_aliasUPDATE && $upd_seo == 1) {
 				$sql_url_aliasUPDATE .= " ON DUPLICATE KEY UPDATE  ";
 				$sql_url_aliasUPDATE .= "`keyword`= VALUES(`keyword`)";
 				$sql_url_aliasUPDATE .= ";";
 				$this->db->query($sql_url_aliasUPDATE);
 			}
 
-			if (!$first_url_alias) {
+			if (!$first_url_alias && $upd_seo == 1) {
 				$sql_url_alias .= ";";
 				$this->db->query($sql_url_alias);
 			}
