@@ -3941,10 +3941,6 @@ class Controllerapismpextension extends Controller
 			Останутся только те, что выбраны в карточке товара в 1С. 
 		*/
 
-		//$logger = new Log('addOrDeleteProductOptions.log');
-
-		//$logger->write("\n" . json_encode($product_options_data) . "\n\n");
-
 		$return_data_arr = array();
 
 		$sql_product_option = "INSERT INTO `" . DB_PREFIX . "product_option` (`product_option_id`,`product_id`,`option_id`,`value`,`required`) VALUES ";
@@ -4001,14 +3997,23 @@ class Controllerapismpextension extends Controller
 				foreach ($options as $option_data) {
 
 					$return_option_data = array();
-
 					$option_ref = $option_data->{'ref'};
-
 					$option_id = $option_data->{'option_id'};
 					$product_option_id = $option_data->{'product_option_id'};
 
 					if ($product_option_id == 0) {
+						
 						$product_option_id = $pd_options_not_delete[$option_id];
+
+						if (!isset($product_option_id)) {
+							
+							$query_pd_opt = 
+								$this->db->query("SELECT product_option_id FROM " . DB_PREFIX . "product_option WHERE product_id = '" . (int)$product_id . "' AND option_id = '" . (int)$option_id . "'");
+							if ($query_pd_opt->num_rows > 0) {
+								$product_option_id = $query_pd_opt->row['product_option_id'];
+							}
+
+						}
 
 						if (!isset($product_option_id)) {
 							$product_option_id = $max_pd_option_id;
@@ -4073,28 +4078,22 @@ class Controllerapismpextension extends Controller
 
 				if (!$first_product_option) {
 
-					$this->db->query($sql_product_option_result);
-					//$logger->write("\n" . $sql_product_option_result . "\n\n");
-
 					$this->db->query($sql_product_option_delete);
-					//$logger->write("\n" . $sql_product_option_delete . "\n\n");
+					$this->db->query($sql_product_option_result);
 
 				}
 				////////////////////////////////////////////////////////////////////
 
 				// Удаление и добавление значений опций товаров
 				$sql_product_option_value_result = $sql_product_option_value . $sql_product_option_value_part2;
-				$sql_product_option_value_result .= " ON DUPLICATE KEY UPDATE `quantity` = VALUES(`quantity`) , `price` = VALUES(`price`);";
+				$sql_product_option_value_result .= " ON DUPLICATE KEY UPDATE `quantity` = VALUES(`quantity`) , `price` = VALUES(`price`), `price_prefix` = VALUES(`price_prefix`);";
 
 				$sql_product_option_value_delete .= ");";
 
 				if (!$first_product_option_value) {
 
 					$this->db->query($sql_product_option_value_delete);
-					//$logger->write("\n" . $sql_product_option_value_delete . "\n\n");
-
 					$this->db->query($sql_product_option_value_result);
-					//$logger->write("\n" . $sql_product_option_value_result . "\n\n");
 
 				}
 			}
