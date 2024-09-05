@@ -4233,7 +4233,7 @@ class Controllerapismpextension extends Controller
 
 		$json = array();
 
-		$vozvrat_json = array();
+		$return_json = array();
 
 		$image_f = file_get_contents('php://input');
 
@@ -4268,26 +4268,20 @@ class Controllerapismpextension extends Controller
 
 					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
 
-					$options_array = json_decode($dump);
+					$options_array = json_decode($dump, true);
 
 					foreach ($options_array as $option) {
 
-						$option_id = $option->{'option_id'};
-
-						$names = (array) $option->{'name'};
-
-						$sort_order = $option->{'sort_order'};
-
-						$option_type = 'select';
+						$option_id = $option['option_id'];
+						$names = $option['name'];
+						$sort_order = $option['sort_order'];
+						$option_type = $option['type']; // 'radio' - as default or 'select'
 
 						if ($option_id == 0) {
 
-							$option_id_max = $option_id_max + 1;
+							$option_id_max = $option_id_max++;
 							$option_id = $option_id_max;
-							$insert = 1;
-						} else {
-
-							$insert = 0;
+						
 						};
 
 						$sql_option .= ($first_option) ? "" : ",";
@@ -4318,7 +4312,7 @@ class Controllerapismpextension extends Controller
 							}
 						}
 
-						$vozvrat_json[$option->{'ref'}] = $option_id;
+						$return_json[$option['ref']] = $option_id;
 					}
 				}
 			}
@@ -4344,7 +4338,7 @@ class Controllerapismpextension extends Controller
 
 			zip_close($zipArc);
 			unlink($nameZip);
-			$json['success'] = $vozvrat_json;
+			$json['success'] = $return_json;
 		} else {
 
 			$json['error'] = 'zip error option add';
