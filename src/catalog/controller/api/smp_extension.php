@@ -782,6 +782,9 @@ class Controllerapismpextension extends Controller
 			return null;
 		}
 
+		$first_option_image = true;
+		$sql_option_image = "INSERT INTO `" . DB_PREFIX . "option_value` (`option_value_id`, `option_id`, `image`) VALUES ";
+
 		while ($zip_entry = zip_read($zipArc)) {
 
 			if (zip_entry_open($zipArc, $zip_entry, "r")) {
@@ -812,8 +815,18 @@ class Controllerapismpextension extends Controller
 							$filename = urldecode($this->db->escape($img_description['filename']));
 							$extension = $img_description['extension'];
 							$sort_order = $img_description['sort_order'];
-
 							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
+
+							$option_image = $img_description['option_img'];
+							$opt_val_id = $img_description['option_value_id'];
+							$opt_id = $img_description['option_id'];
+							if ($option_img == true) {
+								
+								$sql_option_image .= $first_option_image ? "" : ", ";
+								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$first_option_image = false;
+
+							}
 
 							if ($main_image == 1) {
 								
@@ -862,6 +875,17 @@ class Controllerapismpextension extends Controller
 							$sort_order = $img_description['sort_order'];
 
 							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
+							
+							$option_image = $img_description['option_img'];
+							$opt_val_id = $img_description['option_value_id'];
+							$opt_id = $img_description['option_id'];
+							if ($option_img == true) {
+								
+								$sql_option_image .= $first_option_image ? "" : ", ";
+								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$first_option_image = false;
+
+							}
 
 							if ($main_image == 1) {
 
@@ -907,6 +931,17 @@ class Controllerapismpextension extends Controller
 
 							#$rel_img_path = $rel_folder_path . $filename . '.' . $extension;
 							$rel_img_path = $rel_folder_path . $ref . '.' . $extension;
+							
+							$option_image = $img_description['option_img'];
+							$opt_val_id = $img_description['option_value_id'];
+							$opt_id = $img_description['option_id'];
+							if ($option_img == true) {
+								
+								$sql_option_image .= $first_option_image ? "" : ", ";
+								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$first_option_image = false;
+
+							}
 
 							if ($main_image == 1) {
 
@@ -961,6 +996,19 @@ class Controllerapismpextension extends Controller
 							} else {
 								continue;
 							}
+
+							$option_image = $current_img_desc['option_img'];
+							$opt_val_id = $current_img_desc['option_value_id'];
+							$opt_id = $current_img_desc['option_id'];
+							$cur_img_path = $current_img_desc['Image_path'];
+							if ($option_img == true) {
+								
+								$sql_option_image .= $first_option_image ? "" : ", ";
+								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($cur_img_path)")";
+								$first_option_image = false;
+
+							}
+
 						}
 
 						# Возможно у товара было удалено основное изображение в 1С, удаляем его и здесь
@@ -1023,10 +1071,29 @@ class Controllerapismpextension extends Controller
 								$return_desc = array('product_image_id' => $max_image_id, 'server_path' => urlencode($rel_img_path));
 								$return_data[$ref] = $return_desc;
 							}
+
+							$option_image = $img_description['option_img'];
+							$opt_val_id = $img_description['option_value_id'];
+							$opt_id = $img_description['option_id'];
+							$cur_img_path = $img_description['Image_path'];
+							if ($option_img == true) {
+								
+								$sql_option_image .= $first_option_image ? "" : ", ";
+								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$first_option_image = false;
+
+							}
 						}
 					}
 				}
 			}
+		}
+
+		if (!$first_option_image) {
+			
+			$sql_option_image .= "ON DUPLICATE KEY UPDATE `image` = VALUES(`image`);";
+			$this->db->query($sql_option_image);
+
 		}
 
 		zip_close($zipArc);
