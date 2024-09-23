@@ -1,7 +1,7 @@
 <?php
 class Controllerapismpextension extends Controller
 {
-
+	// test clone
 	protected $use_table_seo_url = true;
 
 	public function __construct($registry)
