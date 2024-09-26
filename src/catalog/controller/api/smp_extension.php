@@ -820,10 +820,10 @@ class Controllerapismpextension extends Controller
 							$option_image = $img_description['option_img'];
 							$opt_val_id = $img_description['option_value_id'];
 							$opt_id = $img_description['option_id'];
-							if ($option_img == true) {
+							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
 
 							}
@@ -879,10 +879,10 @@ class Controllerapismpextension extends Controller
 							$option_image = $img_description['option_img'];
 							$opt_val_id = $img_description['option_value_id'];
 							$opt_id = $img_description['option_id'];
-							if ($option_img == true) {
+							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
 
 							}
@@ -935,10 +935,10 @@ class Controllerapismpextension extends Controller
 							$option_image = $img_description['option_img'];
 							$opt_val_id = $img_description['option_value_id'];
 							$opt_id = $img_description['option_id'];
-							if ($option_img == true) {
+							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path). "')";
 								$first_option_image = false;
 
 							}
@@ -1001,10 +1001,10 @@ class Controllerapismpextension extends Controller
 							$opt_val_id = $current_img_desc['option_value_id'];
 							$opt_id = $current_img_desc['option_id'];
 							$cur_img_path = $current_img_desc['Image_path'];
-							if ($option_img == true) {
+							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($cur_img_path)")";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($cur_img_path) . "')";
 								$first_option_image = false;
 
 							}
@@ -1076,10 +1076,10 @@ class Controllerapismpextension extends Controller
 							$opt_val_id = $img_description['option_value_id'];
 							$opt_id = $img_description['option_id'];
 							$cur_img_path = $img_description['Image_path'];
-							if ($option_img == true) {
+							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "("$opt_val_id, $opt_id, $this->db->escape($rel_img_path)")";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
 
 							}
