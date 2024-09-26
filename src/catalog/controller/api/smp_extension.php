@@ -14,6 +14,16 @@ class Controllerapismpextension extends Controller
 
 	#region new functions
 
+	public function optSpecialExist() : bool {
+
+		$queryText = "SHOW TABLES LIKE '" . DB_PREFIX . "option_special'";
+		$query = $this->db->query($queryText);
+		$tableExist = ($query->num_rows > 0) ? true : false; 
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode(array('tableExist' => $tableExist)));
+		
+	}
+
 	/**
 	 * Updating produtcs prices and quantity
 	 *
@@ -2128,12 +2138,14 @@ class Controllerapismpextension extends Controller
 	{
 
 		$this->load->language('api/get_order');
+		$this->load->model('catalog/smp/shipping');
+		$this->load->model('catalog/smp/payment');
 
 		$json = array();
 
 		$last_order_id = (int)$this->request->get['last_id'];
 		$date_start = $this->request->get['date_start'];
-
+		
 		$sql = "SELECT 
 		order_table.order_id, 
 		order_table.invoice_no, 
@@ -2142,13 +2154,17 @@ class Controllerapismpextension extends Controller
 		order_table.store_name, 
 		order_table.store_url, 
 		order_table.customer_id, 
-		order_table.customer_group_id, 
+		order_table.customer_group_id, Pf
 		order_table.firstname, 
 		order_table.lastname, 
 		order_table.email, 
 		order_table.telephone, 
 		order_table.fax, 
 		order_table.custom_field, 
+		
+		/* PAYMENT DETAILS START
+		*/
+
 		order_table.payment_firstname, 
 		order_table.payment_lastname, 
 		order_table.payment_company, 
@@ -2163,7 +2179,12 @@ class Controllerapismpextension extends Controller
 		order_table.payment_address_format, 
 		order_table.payment_custom_field, 
 		order_table.payment_method, 
-		order_table.payment_code, 
+		order_table.payment_code,
+
+		/* PAYMENT DETAILS END
+		SHIPPING DETAILS START
+		*/
+
 		order_table.shipping_firstname, 
 		order_table.shipping_lastname, 
 		order_table.shipping_company, 
@@ -2178,7 +2199,11 @@ class Controllerapismpextension extends Controller
 		order_table.shipping_address_format, 
 		order_table.shipping_custom_field, 
 		order_table.shipping_method, 
-		order_table.shipping_code, 
+		order_table.shipping_code,
+		
+		/* SHIPPING DETAILS END
+		*/ 
+
 		order_table.comment, 
 		order_table.total, 
 		order_table.order_status_id, 
@@ -2207,41 +2232,42 @@ class Controllerapismpextension extends Controller
 
 			$order_id = (int)$row['order_id'];
 			$order_data = $row;
+			
 			$products_list = $this->GetOrderProducts($order_id);
 			$order_data['products_list'] = $products_list;
-
-			$payment_code = $row['payment_code'];
-			$payment_details = null;
-
-			if ($payment_code == "lqp") {
-
-				$payment_details = $this->GetOrderPaymentDetails($order_id);
-			}
-
+			
+			// payment
+			$payment_details = $this->model_catalog_smp_payment->getOrderPaymentDetails(
+				$order_id, 
+				$row['payment_code'], 
+				$row['payment_method']);
 			$order_data['payment_details'] = $payment_details;
 
-			// discount
-			$order_discount = 0;
+			// shipping
+			$shipping_details = $this->model_catalog_smp_shipping->getOrderShippingDetails(
+					$order_id, 
+					$row['shipping_method'], 
+					$row['shipping_code'],
+					$row['shipping_address_1'],
+					$row['shipping_city']);
 
-			$sql_discount = "SELECT 
-			order_id, 
-			SUM(ROUND(IFNULL (value, 0), 2)) AS total_discount
-			FROM `" . DB_PREFIX . "order_total`	
-			WHERE order_id = $order_id AND code IN ('reward', 'coupon', 'voucher') 
-			GROUP BY order_id";
+			$shipping_details['cost'] = 0;
+			$order_data['total_discount'] = 0;
+			
+			// order total
+			$query_order_total = $this->db->query("SELECT * FROM `" . DB_PREFIX . "order_total` WHERE order_id = $order_id");
+			foreach ($query_order_total->rows as $row) {
+				
+				if ($row['code'] == 'shipping') {
+					$shipping_details['cost'] = $row['value'];
+				} elseif ($row['code'] == 'reward' || $row['code'] == 'coupon' || $row['code'] == 'voucher') {
+					$order_data['total_discount'] = $order_data['total_discount'] + $row['value'];
+				}
+			}			
 
-			$query_discount = $this->db->query($sql_discount);
-
-			if ($query_discount->num_rows > 0) {
-				$row_d =  $query_discount->row;
-				$order_discount = $row_d['total_discount'];
-			}
-
-			$order_data['total_discount'] = $order_discount;
-
-
-
+			$order_data['shipping_details'] = $shipping_details;
 			$data_array[] = $order_data;
+
 		}
 
 		$json['success'] = $data_array;
@@ -2317,79 +2343,6 @@ class Controllerapismpextension extends Controller
 		$rows = $query->rows;
 
 		return $rows;
-	}
-
-	protected function GetOrderPaymentDetails($order_id)
-	{
-
-		$sql_payment_details = "SELECT * FROM `" . DB_PREFIX . "lqp_list` WHERE order_id = $order_id";
-		$query = $this->db->query($sql_payment_details);
-		$rows = $query->rows;
-
-		if (count($rows) == 0) {
-			return null;
-		} else {
-			return $rows;
-		}
-	}
-
-	public function get_order()
-	{
-
-		$this->load->language('api/get_order');
-		$type_option  = $this->request->get['type_option'];
-
-		$json = array();
-
-		$param = (int)$this->request->post['param'];
-		$param2 = $this->request->post['param2'];
-		$param3 = $this->request->post['param3'];
-
-		$sql = "SELECT order_table.order_id, order_table.invoice_no, order_table.invoice_prefix, order_table.store_id, order_table.store_name, order_table.store_url, order_table.customer_id, order_table.customer_group_id, order_table.firstname, order_table.lastname, order_table.email, order_table.telephone, order_table.fax, order_table.custom_field, order_table.payment_firstname, order_table.payment_lastname, order_table.payment_company, order_table.payment_address_1, order_table.payment_address_2, order_table.payment_city, order_table.payment_postcode, order_table.payment_country, order_table.payment_country_id, order_table.payment_zone, order_table.payment_zone_id, order_table.payment_address_format, order_table.payment_custom_field, order_table.payment_method, order_table.payment_code, order_table.shipping_firstname, order_table.shipping_lastname, order_table.shipping_company, order_table.shipping_address_1, order_table.shipping_address_2, order_table.shipping_city, order_table.shipping_postcode, order_table.shipping_country, order_table.shipping_country_id, order_table.shipping_zone, order_table.shipping_zone_id, order_table.shipping_address_format, order_table.shipping_custom_field, order_table.shipping_method, order_table.shipping_code, order_table.comment, order_table.total, order_table.order_status_id, order_table.affiliate_id, order_table.commission, order_table.marketing_id , order_table.date_added, order_table.date_modified,order_product.product_id ,product_option_value_table.option_value_id,order_product.quantity,order_product.price,order_product.total,order_total_table.title as title_ship,	sum(IFNULL(order_total_table.value,0)) + sum(IFNULL(order_total_bbcod.value,0)) as value_ship,sum(customer_reward_table.points) FROM `" . DB_PREFIX . "order` as order_table ";
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "order_product` as order_product on order_product.order_id = order_table.order_id ";
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "order_option` as order_option_table on order_option_table.order_id = order_product.order_id and order_option_table.order_product_id = order_product.order_product_id ";
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "product_option_value` as product_option_value_table on product_option_value_table.product_option_id = order_option_table.product_option_id and product_option_value_table.product_id= order_product.product_id and product_option_value_table.product_option_value_id = order_option_table.product_option_value_id"; //and product_option_value_table.product_option_value_id = order_option_table.product_option_value_id 
-
-		if (!empty($type_option)) {
-			$sql .= " and product_option_value_table.option_id = $type_option";
-		}
-
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "customer_reward` as customer_reward_table on customer_reward_table.customer_id= order_table.customer_id";
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "order_total` as order_total_table on order_total_table.order_id= order_table.order_id and order_total_table.code = 'shipping'";
-		$sql .= " LEFT JOIN `" . DB_PREFIX . "order_total` as order_total_bbcod on order_total_bbcod.order_id= order_table.order_id and (order_total_bbcod.code = 'bb_cod' or order_total_bbcod.code = 'cod_cdek_total')";
-
-		if ($param === -100) {
-
-			if (empty($param2)) {
-			} else {
-
-				$sql .= " WHERE DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and order_table.order_status_id <> 0";
-			}
-		} elseif ($param === -1) {
-			if (empty($param2)) {
-				$sql .= " WHERE order_table.order_status_id <> 5  and order_table.order_status_id <> 0";
-			} else {
-				$sql .= " WHERE order_table.order_status_id <> 5 and DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and order_table.order_status_id <> 0";
-			}
-		} elseif ($param === -200) {
-
-			$sql .= " WHERE  DATE_FORMAT(order_table.date_added,'%Y-%m-%d') >= '$param2' and DATE_FORMAT(order_table.date_added,'%Y-%m-%d') <= '$param3' and order_table.order_status_id <> 0";
-		} else {
-			$sql .= " WHERE order_table.order_id = $param  and order_table.order_status_id <> 0";
-		};
-
-		//if (!empty($type_option)) {
-		//  $sql .=" and product_option_value_table.option_value_id is not null"; 
-		//};
-
-		$sql .= " GROUP BY order_table.order_id, order_table.invoice_no, order_table.invoice_prefix, order_table.store_id, order_table.store_name, order_table.store_url, order_table.customer_id, order_table.customer_group_id, order_table.firstname, order_table.lastname, order_table.email, order_table.telephone, order_table.fax, order_table.custom_field, order_table.payment_firstname, order_table.payment_lastname, order_table.payment_company, order_table.payment_address_1, order_table.payment_address_2, order_table.payment_city, order_table.payment_postcode, order_table.payment_country, order_table.payment_country_id, order_table.payment_zone, order_table.payment_zone_id, order_table.payment_address_format, order_table.payment_custom_field, order_table.payment_method, order_table.payment_code, order_table.shipping_firstname, order_table.shipping_lastname, order_table.shipping_company, order_table.shipping_address_1, order_table.shipping_address_2, order_table.shipping_city, order_table.shipping_postcode, order_table.shipping_country, order_table.shipping_country_id, order_table.shipping_zone, order_table.shipping_zone_id, order_table.shipping_address_format, order_table.shipping_custom_field, order_table.shipping_method, order_table.shipping_code, order_table.comment, order_table.total, order_table.order_status_id, order_table.affiliate_id, order_table.commission, order_table.marketing_id , order_table.date_added, order_table.date_modified,order_product.product_id ,product_option_value_table.option_value_id,order_product.quantity,order_product.price,order_product.total ";
-
-		$query = $this->db->query($sql);
-		$json['success'] = $query->rows;
-
-		$this->response->addHeader('Content-Type: application/json');
-		//$this->response->setCompression(9);
-		$this->response->setOutput(json_encode($json));
 	}
 
 	public function category_add()
