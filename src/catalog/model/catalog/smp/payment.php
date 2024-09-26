@@ -3,7 +3,7 @@
 class ModelCatalogSmpPayment extends Model
 {
 
-    publick function GetOrderPaymentDetails($order_id)
+    public function GetOrderPaymentDetails($order_id)
 	{
 		/*
 		$sql_payment_details = "SELECT * FROM `" . DB_PREFIX . "lqp_list` WHERE order_id = $order_id";
@@ -23,7 +23,15 @@ class ModelCatalogSmpPayment extends Model
 
 	}
 
+	public function getWayforpayPaymentDetails(int $order_id) : array 
+	{
 
+		$data = [];
+
+
+		return $data;
+
+	}
 
 }
 
