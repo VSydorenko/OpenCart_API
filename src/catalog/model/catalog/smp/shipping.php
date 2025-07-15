@@ -8,6 +8,9 @@ class ModelCatalogSmpShipping extends Model
       
         $shipping_details = array('department_ref' => '', 'city_ref' => '');
 
+        $shipping_address_1 = $this->db->escape($shipping_address_1);
+        $shipping_city = $this->db->escape($shipping_city);
+
         if ($shipping_code == "novaposhta.department") {
             $this->getNovaPoshtaShippingData($shipping_details, $shipping_address_1, $shipping_city);
         }

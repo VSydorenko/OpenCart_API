@@ -1,7 +1,7 @@
 <?php
 class Controllerapismpextension extends Controller
 {
-	// test clone
+
 	protected $use_table_seo_url = true;
 
 	public function __construct($registry)
@@ -14,14 +14,14 @@ class Controllerapismpextension extends Controller
 
 	#region new functions
 
-	public function optSpecialExist() : bool {
+	protected function optionSpecialTableExist()
+	{
 
 		$queryText = "SHOW TABLES LIKE '" . DB_PREFIX . "option_special'";
 		$query = $this->db->query($queryText);
 		$tableExist = ($query->num_rows > 0) ? true : false; 
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode(array('tableExist' => $tableExist)));
 		
+		return $tableExist;
 	}
 
 	/**
@@ -67,6 +67,13 @@ class Controllerapismpextension extends Controller
 			$first_option = true;
 			$sql_option_upd = "INSERT INTO `" . DB_PREFIX . "product_option_value` (`product_option_value_id`, `quantity`, `price`, `price_prefix`) VALUES "; 
 
+			// SPECIALS FOR OPTIONS:
+			$opt_special_exist = $this->optionSpecialTableExist();
+			if ($opt_special_exist) {
+
+				$this->db->query("TRUNCATE TABLE " . DB_PREFIX . "option_special");
+				$sql_opt_spec = "INSERT INTO `" . DB_PREFIX . "option_special` (product_id, product_option_id, product_option_value_id, customer_group_id, priority, price, date_start, date_end) VALUES ";
+			}
 		}
 
 		$first_del_special = true;
@@ -100,6 +107,7 @@ class Controllerapismpextension extends Controller
 				$options_array = $product_data['options'];
 				foreach ($options_array as $option_data) {
 					
+					$product_option_id = $option_data['product_option_id'];
 					$product_option_value_id = $option_data['product_option_value_id'];
 					$option_quantity = $option_data['quantity'];
 					$option_price = $option_data['price'];
@@ -110,6 +118,20 @@ class Controllerapismpextension extends Controller
 
 					$first_option = false;
 
+					$option_special = $option_data['option_special'];
+					if ($opt_special_exist) {
+						foreach ($option_special as $special_data) {
+
+							$customer_group_id = $special_data['customer_group_id'];
+							$priority = $special_data['priority'];
+							$price = $special_data['price'];
+							$date_start = $special_data['date_start'];
+							$date_end = $special_data['date_end'];
+
+							$sql_special = $sql_opt_spec . "($product_id, $product_option_id, $product_option_value_id, $customer_group_id, $priority, $price, '$date_start', '$date_end')";
+							$this->db->query($sql_special);
+						}
+					}
 				}
 			}
 
@@ -131,7 +153,6 @@ class Controllerapismpextension extends Controller
 					$sql_product_special .= ($first_special) ? '' : ', ';
 					$sql_product_special .= "($product_id, $customer_group_id, $priority, $price, '$date_start', '$date_end')";
 					$first_special = false;
-
 				}
 			}
 
@@ -155,9 +176,7 @@ class Controllerapismpextension extends Controller
 					$sql_product_discount .= "($product_id, $customer_group_id, $quantity, $priority, $price, '$date_start', '$date_end')";
 					$first_dicount = false;
 				}
-
 			}
-
 		}
 
 		$sql_product_upd .= ' ON DUPLICATE KEY UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `date_modified`=VALUES(`date_modified`)';
@@ -167,7 +186,6 @@ class Controllerapismpextension extends Controller
 
 			$sql_option_upd .= ' ON DUPLICATE KEY UPDATE `quantity`=VALUES(`quantity`), `price`=VALUES(`price`), `price_prefix`=VALUES(`price_prefix`)';
 			$this->db->query($sql_option_upd);
-
 		}
 
 		if (!$first_del_special) {
@@ -193,7 +211,371 @@ class Controllerapismpextension extends Controller
 
 		$return_array['success'] = 'Prices and quantity updated';
 		$this->response->setOutput(json_encode($return_array));
+	}
 
+	#endregion
+
+	#region ORDERS
+
+/* Получение списка статусов для заказов покупателей
+	*/
+	public function get_order_statuses()
+	{
+
+		$this->load->language('api/get_status');
+
+		$lang_code = $this->request->get['lang'];
+		$lang_id = 1;
+
+		if (!is_null($lang_code)) {
+			$lang_query = $this->db->query("SELECT language_id FROM `" . DB_PREFIX . "language` WHERE code = '" . $lang_code . "'");
+			foreach ($lang_query->rows as $l_row) {
+				$lang_id = $l_row['language_id'];
+			}
+		}
+
+		$json = array();
+		$query = $this->db->query("SELECT order_status_id, name FROM `" . DB_PREFIX . "order_status` WHERE language_id = $lang_id ORDER BY order_status_id ASC");
+		$json['success'] = $query->rows;
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	public function get_orders()
+	{
+
+		$this->load->language('api/get_order');
+		$this->load->model('catalog/smp/shipping');
+		$this->load->model('catalog/smp/payment');
+
+		$json = array();
+
+		$last_order_id = (int)$this->request->get['last_id'];
+		$date_start = $this->request->get['date_start'];
+
+		$sql = "SELECT 
+		order_table.order_id, 
+		order_table.invoice_no, 
+		order_table.invoice_prefix, 
+		order_table.store_id, 
+		order_table.store_name, 
+		order_table.store_url, 
+		order_table.customer_id, 
+		order_table.customer_group_id,
+		order_table.firstname, 
+		order_table.lastname, 
+		order_table.email, 
+		order_table.telephone, 
+		order_table.fax, 
+		order_table.custom_field,
+		order_table.payment_firstname, 
+		order_table.payment_lastname, 
+		order_table.payment_company, 
+		order_table.payment_address_1, 
+		order_table.payment_address_2, 
+		order_table.payment_city, 
+		order_table.payment_postcode, 
+		order_table.payment_country, 
+		order_table.payment_country_id, 
+		order_table.payment_zone, 
+		order_table.payment_zone_id, 
+		order_table.payment_address_format, 
+		order_table.payment_custom_field, 
+		order_table.payment_method, 
+		order_table.payment_code,
+		order_table.shipping_firstname, 
+		order_table.shipping_lastname, 
+		order_table.shipping_company, 
+		order_table.shipping_address_1, 
+		order_table.shipping_address_2, 
+		order_table.shipping_city, 
+		order_table.shipping_postcode, 
+		order_table.shipping_country, 
+		order_table.shipping_country_id, 
+		order_table.shipping_zone, 
+		order_table.shipping_zone_id, 
+		order_table.shipping_address_format, 
+		order_table.shipping_custom_field, 
+		order_table.shipping_method, 
+		order_table.shipping_code,
+		order_table.comment, 
+		order_table.total, 
+		order_table.order_status_id, 
+		order_table.affiliate_id, 
+		order_table.commission, 
+		order_table.marketing_id, 
+		order_table.date_added, 
+		order_table.date_modified, 
+		order_table.currency_code, 
+		order_table.free_shipping, 
+		ROUND(order_table.currency_value, 4) AS currency_value 
+		FROM `" . DB_PREFIX . "order` AS order_table";
+
+		$sql .= " WHERE order_table.order_id > $last_order_id";
+
+		if (!empty($date_start)) {
+			$sql .= " AND DATE_FORMAT(order_table.date_added, '%Y-%m-%d') >= '$date_start'";
+		}
+
+		$sql .= " ORDER BY order_table.order_id ASC";
+
+		$data_array = array();
+
+		$query = $this->db->query($sql);
+
+		foreach ($query->rows as $row) {
+
+			$order_id = (int)$row['order_id'];
+			$order_data = $row;
+
+			$products_list = $this->GetOrderProducts($order_id);
+			$order_data['products_list'] = $products_list;
+
+			// payment
+			$payment_details = $this->model_catalog_smp_payment->getOrderPaymentDetails(
+				$order_id,
+				$row['payment_code'],
+				$row['payment_method']
+			);
+			$order_data['payment_details'] = $payment_details;
+
+			// shipping
+			$shipping_details = $this->model_catalog_smp_shipping->getOrderShippingDetails(
+				$order_id,
+				$row['shipping_method'],
+				$row['shipping_code'],
+				$row['shipping_address_1'],
+				$row['shipping_city']
+			);
+
+			$shipping_details['cost'] = 0;
+			$order_data['total_discount'] = 0;
+
+			// order total
+			$query_order_total = $this->db->query("SELECT * FROM `" . DB_PREFIX . "order_total` WHERE order_id = $order_id");
+			foreach ($query_order_total->rows as $row) {
+
+				if ($row['code'] == 'shipping') {
+					$shipping_details['cost'] = (float)$row['value'];
+				} elseif ($row['code'] == 'reward' || $row['code'] == 'coupon' || $row['code'] == 'voucher' || $row['code'] == 'everyn') { // everyn - модуль знижки на кожен n-товар в замовленні
+					$order_data['total_discount'] = (float)$order_data['total_discount'] + (float)$row['value'];
+				}
+			}
+
+			$order_data['shipping_details'] = $shipping_details;
+			$data_array[] = $order_data;
+		}
+
+		$json['success'] = $data_array;
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setCompression(9);
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/* Завантаження одного конкретного замовлення
+	*/
+	public function order()
+	{
+
+		$this->load->language('api/get_order');
+		$this->load->model('catalog/smp/shipping');
+		$this->load->model('catalog/smp/payment');
+
+		$json = array();
+
+		$order_id = (int)$this->request->get['id'];
+	
+		$sql = "SELECT 
+		order_table.order_id, 
+		order_table.invoice_no, 
+		order_table.invoice_prefix, 
+		order_table.store_id, 
+		order_table.store_name, 
+		order_table.store_url, 
+		order_table.customer_id, 
+		order_table.customer_group_id,
+		order_table.firstname, 
+		order_table.lastname, 
+		order_table.email, 
+		order_table.telephone, 
+		order_table.fax, 
+		order_table.custom_field,
+		order_table.payment_firstname, 
+		order_table.payment_lastname, 
+		order_table.payment_company, 
+		order_table.payment_address_1, 
+		order_table.payment_address_2, 
+		order_table.payment_city, 
+		order_table.payment_postcode, 
+		order_table.payment_country, 
+		order_table.payment_country_id, 
+		order_table.payment_zone, 
+		order_table.payment_zone_id, 
+		order_table.payment_address_format, 
+		order_table.payment_custom_field, 
+		order_table.payment_method, 
+		order_table.payment_code,
+		order_table.shipping_firstname, 
+		order_table.shipping_lastname, 
+		order_table.shipping_company, 
+		order_table.shipping_address_1, 
+		order_table.shipping_address_2, 
+		order_table.shipping_city, 
+		order_table.shipping_postcode, 
+		order_table.shipping_country, 
+		order_table.shipping_country_id, 
+		order_table.shipping_zone, 
+		order_table.shipping_zone_id, 
+		order_table.shipping_address_format, 
+		order_table.shipping_custom_field, 
+		order_table.shipping_method, 
+		order_table.shipping_code,
+		order_table.comment, 
+		order_table.total, 
+		order_table.order_status_id, 
+		order_table.affiliate_id, 
+		order_table.commission, 
+		order_table.marketing_id, 
+		order_table.date_added, 
+		order_table.date_modified, 
+		order_table.currency_code,
+		order_table.free_shipping,  
+		ROUND(order_table.currency_value, 4) AS currency_value
+		FROM `" . DB_PREFIX . "order` AS order_table";
+
+		$sql .= " WHERE order_table.order_id = $order_id";
+		$sql .= " ORDER BY order_table.order_id ASC";
+
+		$data_array = array();
+
+		$query = $this->db->query($sql);
+
+		foreach ($query->rows as $row) {
+
+			$order_id = (int)$row['order_id'];
+			$order_data = $row;
+
+			$products_list = $this->GetOrderProducts($order_id);
+			$order_data['products_list'] = $products_list;
+
+			// payment
+			$payment_details = $this->model_catalog_smp_payment->getOrderPaymentDetails(
+				$order_id,
+				$row['payment_code'],
+				$row['payment_method']
+			);
+			$order_data['payment_details'] = $payment_details;
+
+			// shipping
+			$shipping_details = $this->model_catalog_smp_shipping->getOrderShippingDetails(
+				$order_id,
+				$row['shipping_method'],
+				$row['shipping_code'],
+				$row['shipping_address_1'],
+				$row['shipping_city']
+			);
+
+			$shipping_details['cost'] = 0;
+			$order_data['total_discount'] = 0;
+
+			// order total
+			$query_order_total = $this->db->query("SELECT * FROM `" . DB_PREFIX . "order_total` WHERE order_id = $order_id");
+			foreach ($query_order_total->rows as $row) {
+
+				if ($row['code'] == 'shipping') {
+					$shipping_details['cost'] = (float)$row['value'];
+				
+					/* поки що відключено, знижки забираємо з таблиці "order_discounts" в розрізі кожного товару
+					} elseif ($row['code'] == 'discount') {
+						$order_data['total_discount'] = (float)$order_data['total_discount'] + (float)$row['value'];
+				} elseif ($row['code'] == 'reward' || $row['code'] == 'coupon' || $row['code'] == 'voucher' || $row['code'] == 'everyn') { // everyn - модуль знижки на кожен n-товар в замовленні
+					$order_data['total_discount'] = (float)$order_data['total_discount'] + (float)$row['value'];
+					*/
+					}
+			}
+
+			$order_data['shipping_details'] = $shipping_details;
+			$data_array[] = $order_data;
+		}
+
+		$json['success'] = $data_array;
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setCompression(9);
+		$this->response->setOutput(json_encode($json));
+	}
+
+	protected function GetOrderProducts($order_id)
+	{
+
+		$products_data = array();
+
+		$sql_order_products = "SELECT 
+		order_product_tbl.order_product_id, 
+		order_product_tbl.order_id, 
+		order_product_tbl.product_id, 
+		order_product_tbl.name, 
+		order_product_tbl.model, 
+		IFNULL(ord_dsc_tbl.quantity, order_product_tbl.quantity) AS quantity, 
+		IFNULL(ord_dsc_tbl.price, order_product_tbl.price) AS price, 
+		IFNULL(ord_dsc_tbl.total_price, order_product_tbl.total) AS total,
+		IFNULL(ord_dsc_tbl.special_price, 0) AS special_price,
+		IFNULL(ord_dsc_tbl.total_special_price, 0) AS total_special,
+		order_product_tbl.tax, 
+		order_product_tbl.reward,
+		IF (product_tbl.product_id IS NULL, TRUE, FALSE) AS product_not_exist,
+		ord_dsc_tbl.product_option_value_id AS order_discount_product_option_value_id
+		FROM `" . DB_PREFIX . "order_product` AS order_product_tbl 
+		LEFT JOIN `" . DB_PREFIX . "product` AS product_tbl ON product_tbl.product_id = order_product_tbl.product_id
+		LEFT JOIN `" . DB_PREFIX . "order_discounts` AS ord_dsc_tbl ON ord_dsc_tbl.order_id = order_product_tbl.order_id AND ord_dsc_tbl.product_id = order_product_tbl.product_id
+		WHERE order_product_tbl.order_id = $order_id 
+		ORDER BY order_product_tbl.order_product_id ASC";
+
+		$query = $this->db->query($sql_order_products);
+
+		foreach ($query->rows as $row) {
+
+			$order_product_id = (int)$row['order_product_id'];
+			$product_id = (int)$row['product_id'];
+
+			$order_line_data = $row;
+
+			$order_product_options_data = $this->GetOrderProductsOptions($order_id, $order_product_id, $product_id);
+
+			$order_line_data['options_data'] = $order_product_options_data;
+
+			$products_data[] = $order_line_data;
+		}
+
+		return $products_data;
+	}
+
+	protected function GetOrderProductsOptions($order_id, $order_product_id, $product_id)
+	{
+
+		$sql_order_options = "SELECT 
+		order_opt.order_option_id, 
+		order_opt.order_id, 
+		order_opt.order_product_id, 
+		order_opt.product_option_id, 
+		order_opt.product_option_value_id, 
+		order_opt.name, 
+		order_opt.value, 
+		order_opt.type, 
+		IF (pd_opt.product_id IS NULL, TRUE, FALSE) AS pd_opt_not_exist
+		FROM `" . DB_PREFIX . "order_option` AS order_opt 
+		LEFT JOIN `" . DB_PREFIX . "product_option_value` AS pd_opt 
+		ON order_opt.product_option_value_id = pd_opt.product_option_value_id 
+		AND	order_opt.product_option_id = pd_opt.product_option_id 
+		AND pd_opt.product_id = $product_id 
+		WHERE order_opt.order_id = $order_id AND order_opt.order_product_id = $order_product_id 
+		ORDER BY order_opt.order_option_id ASC";
+
+		$query = $this->db->query($sql_order_options);
+		$rows = $query->rows;
+
+		return $rows;
 	}
 
 	#endregion
@@ -535,239 +917,6 @@ class Controllerapismpextension extends Controller
 		$this->response->setOutput(json_encode($json));
 	}
 
-	public function images_del()
-	{
-
-		$this->load->language('api/images_del');
-
-		$json = array();
-		$vozvrat_json = array();
-		$image_f =  file_get_contents('php://input');
-		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
-		file_put_contents($nameZip, $image_f);
-		$zipArc = zip_open($nameZip);
-
-		if (is_resource($zipArc)) {
-
-			$first_product_image = true;
-			$sql_product_image = "DELETE FROM `" . DB_PREFIX . "product_image` WHERE product_image_id in (";
-
-			while ($zip_entry = zip_read($zipArc)) {
-				if (zip_entry_open($zipArc, $zip_entry, "r")) {
-
-					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-
-					$options_array = json_decode($dump);
-
-					foreach ($options_array as $product_image_id) {
-
-						$sql_product_image .= ($first_product_image) ? "" : ",";
-						$sql_product_image .= " $product_image_id ";
-						$first_product_image = false;
-					}
-				}
-			}
-
-			if (!$first_product_image) {
-
-				$sql_product_image .= ");";
-				$this->db->query($sql_product_image);
-			}
-
-			zip_close($zipArc);
-			unlink($nameZip);
-			$json['success'] = 'udal images del';
-		} else {
-			$json['error']   = 'zip not archive';
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function images_add()
-	{
-
-		$this->load->language('api/images_add');
-
-		$json = array();
-		$vozvrat_json = array();
-		$image_f =  file_get_contents('php://input');
-		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
-		file_put_contents($nameZip, $image_f);
-
-		$zipArc = zip_open($nameZip);
-
-		if (is_resource($zipArc)) {
-
-			$language_id = $this->getDefaultLanguageId();
-
-			$first_product_image = true;
-			$sql_product_image = "INSERT INTO `" . DB_PREFIX . "product_image` (`product_image_id`, `product_id`,`image`) VALUES ";
-
-			$first_download = true;
-			$sql_download = "INSERT INTO `" . DB_PREFIX . "download` (`download_id`, `filename`, `mask`, `date_added`) VALUES ";
-
-			$first_download_description = true;
-			$sql_download_description = "INSERT INTO `" . DB_PREFIX . "download_description` (`download_id`, `language_id`, `name`) VALUES ";
-
-			$first_product_to_download = true;
-			$sql_product_to_download = "INSERT INTO `" . DB_PREFIX . "product_to_download` (`product_id`, `download_id`) VALUES ";
-
-
-			$first_delete_path = true;
-			$sql_first_delete_path = "DELETE FROM `" . DB_PREFIX . "product_to_download` WHERE download_id IN (";
-
-			$sql = "Select max(`product_image_id`) as `product_image_id` from `" . DB_PREFIX . "product_image`;";
-			$result = $this->db->query($sql);
-
-			$product_image_id_max = 0;
-			foreach ($result->rows as $row) {
-				$product_image_id_max = (int)$row['product_image_id'];
-			}
-
-			$sql = "Select max(`download_id`) as `download_id` from `" . DB_PREFIX . "download`;";
-			$result = $this->db->query($sql);
-			$download_id_max = 0;
-			foreach ($result->rows as $row) {
-				$download_id_max = (int)$row['download_id'];
-			}
-
-			while ($zip_entry = zip_read($zipArc)) {
-				if (zip_entry_open($zipArc, $zip_entry, "r")) {
-
-					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-					$options_array = json_decode($dump);
-
-					foreach ($options_array as $option) {
-
-						$name = $option->{'name'};
-						$product_image_id = $option->{'product_image_id'};
-						$product_id = $option->{'product_id'};
-						$product_to_image = $option->{'product_to_image'};
-
-						$mask = urldecode($this->db->escape($option->{'mask'}));
-						$image = $option->{'name'};
-						$namef = urldecode($option->{'namef'});
-						$download = $option->{'download'};
-						$language_id_u = $option->{'language_id'};
-
-
-						if ($download == 0) {
-							if ($product_to_image == 1) {
-								if ($product_image_id == 0) {
-
-									$product_image_id_max = $product_image_id_max + 1;
-									$product_image_id = $product_image_id_max;
-									$insert = 1;
-								} else {
-									$insert = 0;
-
-									//$sql_first_delete_path .= ($first_delete_path ) ? "" : ",";
-									//$sql_second_delete_path .= ($first_delete_path ) ? "" : ",";
-
-									//$sql_first_delete_path .= " $category_id ";
-									//$sql_second_delete_path .= " $category_id ";	
-									//$first_delete_path = false;
-
-								};
-
-								$sql_product_image .= ($first_product_image) ? "" : ",";
-								$sql_product_image .= " ( $product_image_id,$product_id, '$image') ";
-								$first_product_image = false;
-
-								$vozvrat_json[$option->{'ref'}] = $product_image_id;
-							} else {
-
-								$vozvrat_json[$option->{'ref'}] = -10;
-							}
-						} else {
-							if ($product_image_id == 0) {
-
-								$download_id_max = $download_id_max + 1;
-								$product_image_id = $download_id_max;
-								$insert = 1;
-							} else {
-								$insert = 0;
-
-								$sql_first_delete_path .= ($first_delete_path) ? "" : ",";
-								//$sql_second_delete_path .= ($first_delete_path ) ? "" : ",";
-
-								$sql_first_delete_path .= " $product_image_id";
-								//$sql_second_delete_path .= " $category_id ";	
-								$first_delete_path = false;
-							};
-
-							$sql_download .= ($first_download) ? "" : ",";
-							$sql_download .= " ( $product_image_id,'$name', '$mask',NOW()) ";
-							$first_download = false;
-
-							$sql_download_description .= ($first_download_description) ? "" : ",";
-							$sql_download_description .= " ( $product_image_id,$language_id, '$namef') ";
-							$first_download_description = false;
-
-							$sql_product_to_download .= ($first_product_to_download) ? "" : ",";
-							$sql_product_to_download .= " ( $product_id,$product_image_id) ";
-							$first_product_to_download = false;
-
-							$vozvrat_json[$option->{'ref'}] = $product_image_id;
-						}
-					}
-				}
-			}
-
-			if (!$first_delete_path) {
-				$sql_first_delete_path .= ");";
-				$this->db->query($sql_first_delete_path);
-			}
-
-			if (!$first_download) {
-
-				$sql_download .= " ON DUPLICATE KEY UPDATE  ";
-				$sql_download .= "`filename`= VALUES(`filename`),";
-				$sql_download .= "`date_added`= NOW(),";
-				$sql_download .= "`mask`= VALUES(`mask`)";
-
-				$sql_download .= ";";
-				$this->db->query($sql_download);
-
-				$sql_download_description .= " ON DUPLICATE KEY UPDATE  ";
-				$sql_download_description .= "`language_id`= VALUES(`language_id`),";
-				$sql_download_description .= "`name`= VALUES(`name`)";
-
-				$sql_download_description .= ";";
-				$this->db->query($sql_download_description);
-
-
-				//$sql_product_to_download.=" ON DUPLICATE KEY UPDATE  ";
-				//$sql_product_to_download.= "`download_id `= VALUES(`download_id `)";
-
-				$sql_product_to_download .= ";";
-				$this->db->query($sql_product_to_download);
-			}
-
-			if (!$first_product_image) {
-
-				$sql_product_image .= " ON DUPLICATE KEY UPDATE  ";
-				$sql_product_image .= "`product_id`= VALUES(`product_id`),";
-				$sql_product_image .= "`image`= VALUES(`image`)";
-
-				$sql_product_image .= ";";
-				$this->db->query($sql_product_image);
-			}
-
-			zip_close($zipArc);
-			unlink($nameZip);
-			$json['success'] = $vozvrat_json;
-		} else {
-
-			$json['error']   = 'zip not archive';
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
 	public function AddProductImagesDescriptions()
 	{
 
@@ -835,12 +984,11 @@ class Controllerapismpextension extends Controller
 								$sql_option_image .= $first_option_image ? "" : ", ";
 								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
-
 							}
 
 							if ($main_image == 1) {
 								
-								$query_main = $this->db->query("SELECT image FROM `" . DB_PREFIX ."product` WHERE product_id = $product_id");
+								$query_main = $this->db->query("SELECT image FROM `" . DB_PREFIX . "product` WHERE product_id = $product_id");
 								$current_path = $query_main->row['image'];
 
 								if (!empty($current_path)) {
@@ -853,7 +1001,6 @@ class Controllerapismpextension extends Controller
 								$this->db->query("UPDATE `" . DB_PREFIX . "product` SET image = '" . $this->db->escape($rel_img_path) . "' WHERE product_id = $product_id");
 								$return_desc = array('product_image_id' => 0, 'server_path' => urlencode($rel_img_path));
 								$return_data[$ref] = $return_desc;								
-
 							} else {
 								
 								$query_sec = $this->db->query("SELECT * FROM `" . DB_PREFIX . "product_image` WHERE product_id = $product_id AND product_image_id = $img_id");
@@ -869,15 +1016,14 @@ class Controllerapismpextension extends Controller
 								$this->db->query("UPDATE `" . DB_PREFIX . "product_image` SET image = '" . $this->db->escape($rel_img_path) . "', sort_order = $sort_order WHERE product_id = $product_id AND product_image_id = $img_id");
 								$return_desc = array('product_image_id' => $img_id, 'server_path' => urlencode($rel_img_path));
 								$return_data[$ref] = $return_desc;
-
 							}
-
 						}
 
 						$max_image_id = $this->GetMaxProductimageId();
 
 						foreach ($new_images as $img_description) { // adding new images
 							
+							$new_img_id = (int)$img_description['image_id'];
 							$ref = $img_description['ref'];
 							$main_image = $img_description['main_image'];
 							$filename = urldecode($this->db->escape($img_description['filename']));
@@ -889,12 +1035,12 @@ class Controllerapismpextension extends Controller
 							$option_image = $img_description['option_img'];
 							$opt_val_id = $img_description['option_value_id'];
 							$opt_id = $img_description['option_id'];
+
 							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
 								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
-
 							}
 
 							if ($main_image == 1) {
@@ -904,15 +1050,17 @@ class Controllerapismpextension extends Controller
 								$return_data[$ref] = $return_desc;
 							} else {
 
-								$max_image_id++;
-								$this->db->query("INSERT INTO `" . DB_PREFIX . "product_image` (`product_image_id`, `product_id`, `image`, `sort_order`) VALUES (" . $max_image_id . ", " . $product_id . ", '" . $this->db->escape($rel_img_path) . "', $sort_order)");
+								if ($new_img_id == 0) { // 
+									$img_id = ++$max_image_id;
+								} else {
+									$img_id = $new_img_id;
+								}
+
+								$this->db->query("INSERT INTO `" . DB_PREFIX . "product_image` (`product_image_id`, `product_id`, `image`, `sort_order`) VALUES (" . $img_id . ", " . $product_id . ", '" . $this->db->escape($rel_img_path) . "', $sort_order) ON DUPLICATE KEY UPDATE `image` = VALUES(`image`), `sort_order` = VALUES(`sort_order`)");
 								$return_desc = array('product_image_id' => $max_image_id, 'server_path' => urlencode($rel_img_path));
 								$return_data[$ref] = $return_desc;
 							}
-
 						}
-
-
 					} elseif ($overwrite === 1) { // delete all existing images for product and add new
 
 						$directories_for_del = array();
@@ -948,9 +1096,8 @@ class Controllerapismpextension extends Controller
 							if ($option_image == true) {
 								
 								$sql_option_image .= $first_option_image ? "" : ", ";
-								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path). "')";
+								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
-
 							}
 
 							if ($main_image == 1) {
@@ -966,7 +1113,6 @@ class Controllerapismpextension extends Controller
 								$return_data[$ref] = $return_desc;
 							}
 						}
-
 					} else {
 
 						# Сначала заполняем массив текущими идентификаторами вторичных изображений
@@ -1016,9 +1162,7 @@ class Controllerapismpextension extends Controller
 								$sql_option_image .= $first_option_image ? "" : ", ";
 								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($cur_img_path) . "')";
 								$first_option_image = false;
-
 							}
-
 						}
 
 						# Возможно у товара было удалено основное изображение в 1С, удаляем его и здесь
@@ -1091,7 +1235,6 @@ class Controllerapismpextension extends Controller
 								$sql_option_image .= $first_option_image ? "" : ", ";
 								$sql_option_image .= "($opt_val_id, $opt_id, '" . $this->db->escape($rel_img_path) . "')";
 								$first_option_image = false;
-
 							}
 						}
 					}
@@ -1103,7 +1246,6 @@ class Controllerapismpextension extends Controller
 			
 			$sql_option_image .= "ON DUPLICATE KEY UPDATE `image` = VALUES(`image`);";
 			$this->db->query($sql_option_image);
-
 		}
 
 		zip_close($zipArc);
@@ -1290,27 +1432,27 @@ class Controllerapismpextension extends Controller
 			if (zip_entry_open($zipArc, $zip_entry, "r")) {
 
 				$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-				$ocfilters_array = json_decode(htmlspecialchars_decode($dump));
+				$ocfilters_array = json_decode(htmlspecialchars_decode($dump), true);
 
 				foreach ($ocfilters_array as $ocfilter) {
 
 					$ocfilter_return = array(); // Для возвращаемых данных значений фильтра;
 
-					$ref_1c = $ocfilter->{'ref_1c'};
-					$option_id = $ocfilter->{'option_id'};
-					$type = $ocfilter->{'type'};
-					$keyword = urldecode($ocfilter->{'keyword'});
-					$selectbox = $ocfilter->{'selectbox'};
-					$grouping = $ocfilter->{'grouping'};
-					$color = $ocfilter->{'color'};
-					$image = $ocfilter->{'image'};
-					$status = $ocfilter->{'status'};
-					$sort_order = $ocfilter->{'sort_order'};
+					$ref_1c = $ocfilter['ref_1c'];
+					$option_id = $ocfilter['option_id'];
+					$type = $ocfilter['type'];
+					$keyword = urldecode($ocfilter['keyword']);
+					$selectbox = $ocfilter['selectbox'];
+					$grouping = $ocfilter['grouping'];
+					$color = $ocfilter['color'];
+					$image = $ocfilter['image'];
+					$status = $ocfilter['status'];
+					$sort_order = $ocfilter['sort_order'];
 
-					$description = $this->object_to_array($ocfilter->{'description'});
-					$categories = $this->object_to_array($ocfilter->{'categories'});
-					$stores = $this->object_to_array($ocfilter->{'stores'});
-					$values = $this->object_to_array($ocfilter->{'values'});
+					$description = $ocfilter['description'];
+					$categories = $ocfilter['categories'];
+					$stores = $ocfilter['stores'];
+					$values = $ocfilter['values'];
 
 					if ($option_id == 0) {
 
@@ -1318,13 +1460,6 @@ class Controllerapismpextension extends Controller
 						$max_ocfilter_id++;
 						$option_id = $max_ocfilter_id;
 					}
-
-					/*SET status = '" . (isset($data['status']) ? (int)$data['status'] : 0) . "', 
-					sort_order = '" . (int)$data['sort_order'] . "', 
-					type = '" . $this->db->escape($data['type']) . "', 
-					selectbox = '" . (isset($data['selectbox']) ? (int)$data['selectbox'] : 0) . "', 
-					color = '" . (isset($data['color']) ? (int)$data['color'] : 0) . "', 
-					image = '" . (isset($data['image']) ? (int)$data['image'] : 0) . "'";*/
 
 					if ($this->use_table_seo_url) { # Opencart 3
 						$sql_ocfilter = "INSERT INTO `" . DB_PREFIX . "ocfilter_option` ( 
@@ -1597,12 +1732,12 @@ class Controllerapismpextension extends Controller
 			if (zip_entry_open($zipArc, $zip_entry, "r")) {
 
 				$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-				$ocfilters_array = json_decode(htmlspecialchars_decode($dump));
+				$ocfilters_array = json_decode(htmlspecialchars_decode($dump), true);
 
 				foreach ($ocfilters_array as $product_data) {
 
-					$product_id = $product_data->{'product_id'};
-					$filter_data = $this->object_to_array($product_data->{'filter_data'});
+					$product_id = $product_data['product_id'];
+					$filter_data = $product_data['filter_data'];
 
 					if ($this->use_table_seo_url) {
 						$this->db->query("DELETE FROM " . DB_PREFIX . "ocfilter_option_value_to_product WHERE product_id = '" . (int)$product_id . "'");
@@ -1636,713 +1771,6 @@ class Controllerapismpextension extends Controller
 		unlink($nameZip);
 		$return_array['success'] = 'OCFilter to products updated successfuly!';
 		$this->response->setOutput(json_encode($return_array));
-	}
-
-	public function images_go()
-	{
-
-		$this->load->language('api/images_go');
-
-		$json = array();
-		//$json = '';
-		$image_f =  file_get_contents('php://input');
-		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
-		file_put_contents($nameZip, $image_f);
-		$zipArc = zip_open($nameZip);
-		$dirname_array = array();
-
-		if (is_resource($zipArc)) {
-
-			while ($zip_entry = zip_read($zipArc)) {
-
-				if (zip_entry_open($zipArc, $zip_entry, "r")) {
-
-					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-
-					$options_array = json_decode(htmlspecialchars_decode($dump));
-
-					foreach ($options_array as $option) {
-
-						$namef = $option->{'namef'};
-						$image_f = base64_decode($option->{'imagef'});
-						$namef_with_dir = DIR_IMAGE . 'catalog/' . $namef;
-						$dirname_namef = dirname($namef_with_dir);
-
-						if (!isset($dirname_array[$dirname_namef])) {
-
-							if (!file_exists($dirname_namef)) {
-								mkdir($dirname_namef, 0777, true);
-							}
-
-							$dirname_array[$dirname_namef] = true;
-						}
-
-						file_put_contents($namef_with_dir, $image_f);
-					}
-				}
-			}
-
-			zip_close($zipArc);
-			unlink($nameZip);
-			$json['success'] = 'images upload';
-		} else {
-			$json['error']   = 'zip not archive';
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function deleteAkcii()
-	{
-
-		$this->load->language('api/deleteAkcii');
-
-		$json = array();
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "product_discount`;";
-		$this->db->query($sql);
-		$json['success'] = 'Akcii udaleni';
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function deleteimg()
-	{
-
-		$this->load->language('api/deleteimg');
-
-		$json = array();
-
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "download`;";
-		$this->db->query($sql);
-
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "download_description`;";
-		$this->db->query($sql);
-
-		$query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = DATABASE() AND table_name  = '" . DB_PREFIX . "download_report';";
-		$result = $this->db->query($query);
-
-		if (count($result->rows) == 1) {
-			$sql = "TRUNCATE TABLE `" . DB_PREFIX . "download_report`;";
-			$this->db->query($sql);
-		}
-
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "product_to_download`;";
-		$this->db->query($sql);
-
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "product_image`;";
-		$this->db->query($sql);
-
-		$json['success'] = 'files udaleni';
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function deleteSpecials()
-	{
-
-		$this->load->language('api/deleteSpecials');
-
-		$json = array();
-
-		$sql = "TRUNCATE TABLE `" . DB_PREFIX . "product_special`;";
-		$this->db->query($sql);
-
-		$json['success'] = 'Specials udaleni';
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function update_price()
-	{
-
-		$this->load->language('api/update_price');
-
-		$type_option  = $this->request->get['type_option'];
-
-		$json = array();
-
-		$image_f =  file_get_contents('php://input');
-		$nameZip = DIR_CACHE . $this->request->get['nameZip'] . '.zip';
-
-		file_put_contents($nameZip, $image_f);
-
-		$option_vid = array();
-		$option_id = 0;
-
-		$zipArc = zip_open($nameZip);
-
-		if (is_resource($zipArc)) {
-
-			$first_product = true;
-			$sql_product = "INSERT INTO `" . DB_PREFIX . "product` (`product_id`,`quantity`,`price`,`stock_status_id`,`date_modified`,`date_available`,`status`) VALUES ";
-
-			$first_product_option_value = true;
-			$sql_product_option_value = "INSERT INTO `" . DB_PREFIX . "product_option_value` (`product_option_id`,`product_id`,`option_id`,`option_value_id`,`quantity`,`subtract`,`price`,`price_prefix`,`points`,`points_prefix`,`weight`,`weight_prefix`) VALUES ";
-
-			$first_del_product_option_value = true;
-			$sql_del_product_option_value = "DELETE FROM `" . DB_PREFIX . "product_option_value` WHERE product_id IN (";
-
-			$first_delete_product_option = true;
-			$sql_delete_product_option = "DELETE FROM `" . DB_PREFIX . "product_option` WHERE product_id IN (";
-
-			$first_product_option = true;
-			$sql_product_option = "INSERT INTO `" . DB_PREFIX . "product_option` (`product_option_id`,`product_id`,`option_id`,`value`,`required`) VALUES ";
-
-			$sql_delete_product_special = "DELETE FROM `" . DB_PREFIX . "product_special` WHERE product_id IN (";
-			$first_delete_product_special = true;
-
-			$sql_product_special  = "INSERT INTO `" . DB_PREFIX . "product_special` (`product_id`,`customer_group_id`,`priority`,`price`,`date_start`,`date_end`) VALUES ";
-			$first_product_special = true;
-
-			$sql_delete_product_discount = "DELETE FROM `" . DB_PREFIX . "product_discount` WHERE product_id IN (";
-			$first_delete_product_discount = true;
-
-			$sql_product_discount  = "INSERT INTO `" . DB_PREFIX . "product_discount` (`product_id`,`customer_group_id`,`quantity`,`priority`,`price`,`date_start`,`date_end`) VALUES ";
-			$first_product_discount = true;
-
-			$ProductOption = $this->getProductOption();
-
-			$sql = "Select max(`product_option_id`) as `product_option_id` from `" . DB_PREFIX . "product_option`;";
-			$result = $this->db->query($sql);
-			$product_option_id = 0;
-
-			foreach ($result->rows as $row) {
-				$product_option_id = (int)$row['product_option_id'];
-				$product_option_id++;
-			}
-
-			while ($zip_entry = zip_read($zipArc)) {
-
-				if (zip_entry_open($zipArc, $zip_entry, "r")) {
-
-					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
-					$products_id_array = json_decode($dump);
-
-					foreach ($products_id_array as $parent) {
-
-						$product_id = $parent->{'product_id'};
-						$quantity = $parent->{'quantity'};
-						$price = $parent->{'price'};
-						$stock_status_id = $parent->{'stock_status_id'};
-						$status = $parent->{'status'};
-						$date_available = $parent->{'date_available'};
-
-						$sql_product .= ($first_product) ? "" : ",";
-						$sql_product .= " ( $product_id, $quantity, $price, $stock_status_id, NOW(),'$date_available',$status) ";
-						$first_product  = false;
-
-						$options = $parent->{'options'};
-
-						if (empty($parent->{'specials'})) {
-							$specials_empty = true;
-						} else {
-							$specials_empty = false;
-							$specials = $parent->{'specials'};
-						};
-
-						if (empty($parent->{'akcii'})) {
-							$akcii_empty = true;
-						} else {
-							$akcii_empty = false;
-							$akcii = $parent->{'akcii'};
-						};
-
-						if (!empty($type_option)) {
-							if (count($options) !== 0) {
-
-								$sql_del_product_option_value .= ($first_del_product_option_value) ? "" : ",";
-
-								$sql_del_product_option_value .= " $product_id ";
-
-								$first_del_product_option_value = false;
-							} else {
-
-								$sql_delete_product_option .= ($first_delete_product_option) ? "" : ",";
-								$sql_delete_product_option .= " $product_id ";
-								$first_delete_product_option = false;
-							}
-						}
-
-						foreach ($options as $option) {
-
-							$option_id = $option->{'option_id'};
-
-							if (isset($ProductOption[$product_id][$option_id])) {
-								$option_vid[$option_id] = $ProductOption[$product_id][$option_id];
-							}
-
-							if ((!isset($ProductOption[$product_id][$option_id])) and (!isset($option_vid[$option_id]))) {
-
-								$sql_product_option .= ($first_product_option) ? "" : ",";
-								$sql_product_option .= " ($product_option_id,$product_id,$option_id,'',1) ";
-								$first_product_option = false;
-
-								$product_option_id_t = $product_option_id;
-								$product_option_id++;
-
-								$option_vid[$option_id] = $product_option_id_t;
-							} else {
-								$product_option_id_t = $option_vid[$option_id];
-							}
-
-							$option_value_id = $option->{'option_value_id'};
-							$quantity = $option->{'quantity'};
-							$subtract = $option->{'subtract'};
-							$price = $option->{'price'};
-							$price_prefix = $option->{'price_prefix'};
-							$points = $option->{'points'};
-							$points_prefix = $option->{'points_prefix'};
-							$weight = $option->{'weight'};
-							$weight_prefix = $option->{'weight_prefix'};
-
-							$sql_product_option_value .= ($first_product_option_value) ? "" : ",";
-
-							$sql_product_option_value .= "  ($product_option_id_t, $product_id, $option_id, $option_value_id ,$quantity,$subtract,$price,'$price_prefix',$points,'$points_prefix', $weight,'$weight_prefix') ";
-
-							$first_product_option_value = false;
-						}
-
-						$sql_delete_product_special .= ($first_delete_product_special) ? "" : ",";
-						$sql_delete_product_special .= " $product_id ";
-						$first_delete_product_special = false;
-
-						if (!$specials_empty) {
-
-							if (count($specials) == 0) {
-							} else {
-								foreach ($specials as $special) {
-
-									$customer_group_id = $special->{'customer_group_id'};
-									$priority = $special->{'priority'};
-									$date_start = $special->{'date_start'};
-									$price = $special->{'price'};
-									$date_end = $special->{'date_end'};
-
-									$sql_product_special .= ($first_product_special) ? "" : ",";
-									$sql_product_special .= "  ($product_id, $customer_group_id,  $priority, $price,'$date_start','$date_end') ";
-
-									$first_product_special = false;
-								}
-							}
-						}
-
-						$sql_delete_product_discount .= ($first_delete_product_discount) ? "" : ",";
-						$sql_delete_product_discount .= " $product_id ";
-						$first_delete_product_discount = false;
-
-						if (!$akcii_empty) {
-
-							if (count($akcii) == 0) {
-							} else {
-								foreach ($akcii as $special) {
-
-									$customer_group_id = $special->{'customer_group_id'};
-									$priority = $special->{'priority'};
-									$date_start = $special->{'date_start'};
-									$price = $special->{'price'};
-									$date_end = $special->{'date_end'};
-									$quantity = $special->{'quantity'};
-
-									$sql_product_discount .= ($first_product_discount) ? "" : ",";
-									$sql_product_discount .= "  ($product_id, $customer_group_id, $quantity,  $priority, $price,'$date_start','$date_end') ";
-									$first_product_discount = false;
-								}
-							}
-						} //akcii
-					}
-				}
-			}
-
-			if (!$first_delete_product_special) {
-
-				$sql_delete_product_special .= ");";
-				$this->db->query($sql_delete_product_special);
-
-				$sql = "Select max(`product_special_id`) as `product_special_id` from `" . DB_PREFIX . "product_special`;";
-				$result = $this->db->query($sql);
-				$product_special_id = 0;
-
-				foreach ($result->rows as $row) {
-					$product_special_id = (int)$row['product_special_id'];
-					$product_special_id++;
-				}
-
-				$sql = "ALTER TABLE `" . DB_PREFIX . "product_special` AUTO_INCREMENT = $product_special_id ;";
-				$this->db->query($sql);
-			}
-
-			if (!$first_product_special) {
-
-				$sql_product_special .= ";";
-				$this->db->query($sql_product_special);
-			}
-
-			if (!$first_delete_product_discount) {
-
-				$sql_delete_product_discount .= ");";
-				$this->db->query($sql_delete_product_discount);
-
-				$sql = "Select max(`product_discount_id`) as `product_discount_id` from `" . DB_PREFIX . "product_discount`;";
-				$result = $this->db->query($sql);
-				$product_discount_id = 0;
-
-				foreach ($result->rows as $row) {
-					$product_discount_id = (int)$row['product_discount_id'];
-					$product_discount_id++;
-				}
-
-				$sql = "ALTER TABLE `" . DB_PREFIX . "product_discount` AUTO_INCREMENT = $product_discount_id;";
-				$this->db->query($sql);
-			}
-
-			if (!$first_product_discount) {
-				$sql_product_discount .= ";";
-				$this->db->query($sql_product_discount);
-			}
-
-			if (!$first_product) {
-
-				$sql_product .= " ON DUPLICATE KEY UPDATE  ";
-				$sql_product .= "`quantity`= VALUES(`quantity`),";
-				$sql_product .= "`price`= VALUES(`price`),";
-				$sql_product .= "`stock_status_id`= VALUES(`stock_status_id`),";
-				$sql_product .= "`date_modified`= NOW(),";
-				$sql_product .= "`date_available`= VALUES(`date_available`),";
-				$sql_product .= "`status`= VALUES(`status`)";
-
-				$sql_product .= ";";
-				$this->db->query($sql_product);
-			}
-
-			if (!$first_delete_product_option) {
-				$sql_delete_product_option .= ");";
-				$this->db->query($sql_delete_product_option);
-			}
-
-			if (!$first_product_option) {
-				$sql_product_option .= ";";
-				$this->db->query($sql_product_option);
-			}
-
-			if (!$first_del_product_option_value) {
-
-				$sql_del_product_option_value .= ");";
-				$this->db->query($sql_del_product_option_value);
-
-				$sqlproduct_option_value_id = "Select max(`product_option_value_id`) as `product_option_value_id` from `" . DB_PREFIX . "product_option_value`;";
-				$resultproduct_option_value = $this->db->query($sqlproduct_option_value_id);
-				$product_option_idproduct_option_value = 1;
-
-				foreach ($resultproduct_option_value->rows as $row) {
-					$product_option_idproduct_option_value = (int)$row['product_option_value_id'];
-					$product_option_idproduct_option_value++;
-				}
-
-				$sqlproduct_option_value_id = "ALTER TABLE `" . DB_PREFIX . "product_option_value` AUTO_INCREMENT=$product_option_idproduct_option_value;";
-				$this->db->query($sqlproduct_option_value_id);
-			}
-
-			if (!$first_product_option_value) {
-
-				$sql_product_option_value .= " ON DUPLICATE KEY UPDATE  ";
-				$sql_product_option_value .= "`quantity`= VALUES(`quantity`),";
-				$sql_product_option_value .= "`subtract`= VALUES(`subtract`),";
-				$sql_product_option_value .= "`price`= VALUES(`price`),";
-				$sql_product_option_value .= "`price_prefix`= VALUES(`price_prefix`),";
-				$sql_product_option_value .= "`points`= VALUES(`points`),";
-				$sql_product_option_value .= "`points_prefix`= VALUES(`points_prefix`),";
-				$sql_product_option_value .= "`weight`= VALUES(`weight`),";
-				$sql_product_option_value .= "`weight_prefix`= VALUES(`weight_prefix`)";
-				$sql_product_option_value .= ";";
-				$this->db->query($sql_product_option_value);
-			}
-
-			zip_close($zipArc);
-			unlink($nameZip);
-			$json['success'] = 'update_price complete';
-		} else {
-			$json['error']   = 'zip not archive';
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function update_order_status()
-	{
-
-		$this->load->language('api/update_order_status');
-
-		$json = array();
-
-		$order_id = (int)$this->request->get['order_id'];
-		$order_status_id = (int)$this->request->get['order_status_id'];
-
-		$sql_order_check = "SELECT * FROM `" . DB_PREFIX . "order` WHERE order_id = $order_id";
-		$query = $this->db->query($sql_order_check);
-		$rows = $query->rows;
-		if (count($rows) == 0) {
-
-			$json['error'] = "Unable to update order status: order №$order_id not found on the site";
-		} else {
-
-			$sql_status_check = "SELECT order_status_id FROM `" . DB_PREFIX . "order_status` WHERE order_status_id = $order_status_id";
-			$query = $this->db->query($sql_status_check);
-			$rows = $query->rows;
-
-			if (count($rows) == 0) {
-
-				$json['error'] = "Unable to update status for order №$order_id: order status id $order_status_id not found on the site";
-			} else {
-
-				$sql_upd_order = "UPDATE `" . DB_PREFIX . "order` SET order_status_id = $order_status_id, date_modified = NOW() WHERE order_id = $order_id";
-				$this->db->query($sql_upd_order);
-
-				$sql_add_order_history = "INSERT INTO `" . DB_PREFIX . "order_history` (`order_id`,`order_status_id`,`date_added`) VALUES ($order_id, $order_status_id, NOW())";
-				$this->db->query($sql_add_order_history);
-
-				$json['success'] = "Status for order №$order_id updated successfully.";
-			}
-		}
-
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	/* Получение списка статусов для заказов покупателей
-	*/
-	public function get_order_statuses()
-	{
-
-		$this->load->language('api/get_status');
-
-		$lang_code = $this->request->get['lang'];
-		$lang_id = 1;
-
-		if (!is_null($lang_code)) {
-			$lang_query = $this->db->query("SELECT language_id FROM `" . DB_PREFIX . "language` WHERE code = '" . $lang_code . "'");
-			foreach ($lang_query->rows as $l_row) {
-				$lang_id = $l_row['language_id'];
-			}
-		}
-
-		$json = array();
-		$query = $this->db->query("SELECT order_status_id, name FROM `" . DB_PREFIX . "order_status` WHERE language_id = $lang_id ORDER BY order_status_id ASC");
-		$json['success'] = $query->rows;
-		$this->response->addHeader('Content-Type: application/json');
-		$this->response->setOutput(json_encode($json));
-	}
-
-	public function get_orders()
-	{
-
-		$this->load->language('api/get_order');
-		$this->load->model('catalog/smp/shipping');
-		$this->load->model('catalog/smp/payment');
-
-		$json = array();
-
-		$last_order_id = (int)$this->request->get['last_id'];
-		$date_start = $this->request->get['date_start'];
-		
-		$sql = "SELECT 
-		order_table.order_id, 
-		order_table.invoice_no, 
-		order_table.invoice_prefix, 
-		order_table.store_id, 
-		order_table.store_name, 
-		order_table.store_url, 
-		order_table.customer_id, 
-		order_table.customer_group_id, Pf
-		order_table.firstname, 
-		order_table.lastname, 
-		order_table.email, 
-		order_table.telephone, 
-		order_table.fax, 
-		order_table.custom_field, 
-		
-		/* PAYMENT DETAILS START
-		*/
-
-		order_table.payment_firstname, 
-		order_table.payment_lastname, 
-		order_table.payment_company, 
-		order_table.payment_address_1, 
-		order_table.payment_address_2, 
-		order_table.payment_city, 
-		order_table.payment_postcode, 
-		order_table.payment_country, 
-		order_table.payment_country_id, 
-		order_table.payment_zone, 
-		order_table.payment_zone_id, 
-		order_table.payment_address_format, 
-		order_table.payment_custom_field, 
-		order_table.payment_method, 
-		order_table.payment_code,
-
-		/* PAYMENT DETAILS END
-		SHIPPING DETAILS START
-		*/
-
-		order_table.shipping_firstname, 
-		order_table.shipping_lastname, 
-		order_table.shipping_company, 
-		order_table.shipping_address_1, 
-		order_table.shipping_address_2, 
-		order_table.shipping_city, 
-		order_table.shipping_postcode, 
-		order_table.shipping_country, 
-		order_table.shipping_country_id, 
-		order_table.shipping_zone, 
-		order_table.shipping_zone_id, 
-		order_table.shipping_address_format, 
-		order_table.shipping_custom_field, 
-		order_table.shipping_method, 
-		order_table.shipping_code,
-		
-		/* SHIPPING DETAILS END
-		*/ 
-
-		order_table.comment, 
-		order_table.total, 
-		order_table.order_status_id, 
-		order_table.affiliate_id, 
-		order_table.commission, 
-		order_table.marketing_id, 
-		order_table.date_added, 
-		order_table.date_modified, 
-		order_table.currency_code, 
-		ROUND(order_table.currency_value, 4) AS currency_value
-		FROM `" . DB_PREFIX . "order` AS order_table";
-
-		$sql .= " WHERE order_table.order_id > $last_order_id";
-
-		if (!empty($date_start)) {
-			$sql .= " AND DATE_FORMAT(order_table.date_added, '%Y-%m-%d') >= '$date_start'";
-		}
-
-		$sql .= " ORDER BY order_table.order_id ASC";
-
-		$data_array = array();
-
-		$query = $this->db->query($sql);
-
-		foreach ($query->rows as $row) {
-
-			$order_id = (int)$row['order_id'];
-			$order_data = $row;
-			
-			$products_list = $this->GetOrderProducts($order_id);
-			$order_data['products_list'] = $products_list;
-			
-			// payment
-			$payment_details = $this->model_catalog_smp_payment->getOrderPaymentDetails(
-				$order_id, 
-				$row['payment_code'], 
-				$row['payment_method']);
-			$order_data['payment_details'] = $payment_details;
-
-			// shipping
-			$shipping_details = $this->model_catalog_smp_shipping->getOrderShippingDetails(
-					$order_id, 
-					$row['shipping_method'], 
-					$row['shipping_code'],
-					$row['shipping_address_1'],
-					$row['shipping_city']);
-
-			$shipping_details['cost'] = 0;
-			$order_data['total_discount'] = 0;
-			
-			// order total
-			$query_order_total = $this->db->query("SELECT * FROM `" . DB_PREFIX . "order_total` WHERE order_id = $order_id");
-			foreach ($query_order_total->rows as $row) {
-				
-				if ($row['code'] == 'shipping') {
-					$shipping_details['cost'] = $row['value'];
-				} elseif ($row['code'] == 'reward' || $row['code'] == 'coupon' || $row['code'] == 'voucher') {
-					$order_data['total_discount'] = $order_data['total_discount'] + $row['value'];
-				}
-			}			
-
-			$order_data['shipping_details'] = $shipping_details;
-			$data_array[] = $order_data;
-
-		}
-
-		$json['success'] = $data_array;
-
-		$this->response->addHeader('Content-Type: application/json');
-		//$this->response->setCompression(9);
-		$this->response->setOutput(json_encode($json));
-	}
-
-	protected function GetOrderProducts($order_id)
-	{
-
-		$products_data = array();
-
-		$sql_order_products = "SELECT 
-		order_product_tbl.order_product_id, 
-		order_product_tbl.order_id, 
-		order_product_tbl.product_id, 
-		order_product_tbl.name, 
-		order_product_tbl.model, 
-		order_product_tbl.quantity, 
-		order_product_tbl.price, 
-		order_product_tbl.total, 
-		order_product_tbl.tax, 
-		order_product_tbl.reward,
-		IF (product_tbl.product_id IS NULL, TRUE, FALSE) AS product_not_exist
-		FROM `" . DB_PREFIX . "order_product` AS order_product_tbl 
-		LEFT JOIN `" . DB_PREFIX . "product` AS product_tbl ON product_tbl.product_id = order_product_tbl.product_id 
-		WHERE order_product_tbl.order_id = $order_id 
-		ORDER BY order_product_tbl.order_product_id ASC";
-
-		$query = $this->db->query($sql_order_products);
-
-		foreach ($query->rows as $row) {
-
-			$order_product_id = (int)$row['order_product_id'];
-			$product_id = (int)$row['product_id'];
-
-			$order_line_data = $row;
-
-			$order_product_options_data = $this->GetOrderProductsOptions($order_id, $order_product_id, $product_id);
-
-			$order_line_data['options_data'] = $order_product_options_data;
-
-			$products_data[] = $order_line_data;
-		}
-
-		return $products_data;
-	}
-
-	protected function GetOrderProductsOptions($order_id, $order_product_id, $product_id)
-	{
-
-		$sql_order_options = "SELECT 
-		order_opt.order_option_id, 
-		order_opt.order_id, 
-		order_opt.order_product_id, 
-		order_opt.product_option_id, 
-		order_opt.product_option_value_id, 
-		order_opt.name, 
-		order_opt.value, 
-		order_opt.type, 
-		IF (pd_opt.product_id IS NULL, TRUE, FALSE) AS pd_opt_not_exist
-		FROM `" . DB_PREFIX . "order_option` AS order_opt 
-		LEFT JOIN `" . DB_PREFIX . "product_option_value` AS pd_opt 
-		ON order_opt.product_option_value_id = pd_opt.product_option_value_id 
-		AND	order_opt.product_option_id = pd_opt.product_option_id 
-		AND pd_opt.product_id = $product_id 
-		WHERE order_opt.order_id = $order_id AND order_opt.order_product_id = $order_product_id 
-		ORDER BY order_opt.order_option_id ASC";
-
-		$query = $this->db->query($sql_order_options);
-		$rows = $query->rows;
-
-		return $rows;
 	}
 
 	public function category_add()
@@ -2441,7 +1869,7 @@ class Controllerapismpextension extends Controller
 
 					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
 
-					$data_array = json_decode($dump);
+					$data_array = json_decode($dump, true);
 
 					$category_desc_values = array(); //В этом массиве накапливаем значения описаний для категорий с "parent_id" <> 0 или "category_id" = 0
 
@@ -2449,9 +1877,9 @@ class Controllerapismpextension extends Controller
 
 					foreach ($data_array as $category) {
 
-						$category_id = $category->{'category_id'};
-						$cat_ref_1c = $category->{'ref'}; // 1С-ный УИД категории
-						$parent_ref_1c = $category->{'parent_ref'}; // 1С-ный УИД категории-родителя
+						$category_id = $category['category_id'];
+						$cat_ref_1c = $category['ref']; // 1С-ный УИД категории
+						$parent_ref_1c = $category['parent_ref']; // 1С-ный УИД категории-родителя
 
 						if ($category_id == 0) {
 
@@ -2472,9 +1900,9 @@ class Controllerapismpextension extends Controller
 
 						$cat_ids[$cat_ref_1c] = $category_id;
 
-						$image = $category->{'image'};
+						$image = $category['image'];
 
-						$parent_id = $category->{'parent_id'};
+						$parent_id = $category['parent_id'];
 
 						if ($parent_id == 0 and $parent_ref_1c <> '') {
 							$parent_id = $cat_ids[$parent_ref_1c];
@@ -2483,27 +1911,27 @@ class Controllerapismpextension extends Controller
 						//category_path
 						$category_path[$category_id] = $parent_id;
 
-						$top = $category->{'top'};
+						$top = $category['top'];
 
-						$column = $category->{'column'};
+						$column = $category['column'];
 						//$sort_order = $category->{'sort_order'};
-						$date_added = $category->{'date_added'};
-						$date_modified = $category->{'date_modified'};
-						$names = $this->object_to_array($category->{'name'});
-						$descriptions = $this->object_to_array($category->{'description'});
+						$date_added = $category['date_added'];
+						$date_modified = $category['date_modified'];
+						$names = $category['name'];
+						$descriptions = $category['description'];
 
 						if ($exist_meta_title) {
-							$meta_titles = $this->object_to_array($category->{'meta_title'});
+							$meta_titles = $category['meta_title'];
 						}
 
-						$meta_descriptions = $this->object_to_array($category->{'meta_description'});
-						$meta_keywords = $this->object_to_array($category->{'meta_keyword'});
+						$meta_descriptions = $category['meta_description'];
+						$meta_keywords = $category['meta_keyword'];
 
-						$keywords = $this->object_to_array($category->{'seo_keyword'});
+						$keywords = $category['seo_keyword'];
 
-						$store_ids = $this->object_to_array($category->{'store_ids'});
-						$layout = $this->object_to_array($category->{'layout'});
-						$status = $this->object_to_array($category->{'status'});
+						$store_ids = $category['store_ids'];
+						$layout = $category['layout'];
+						$status = $category['status'];
 
 						// generate and execute SQL for inserting the category
 						$sql_category .= ($first_category) ? "" : ",";
@@ -2628,7 +2056,6 @@ class Controllerapismpextension extends Controller
 							$sql_category_to_layout .= " ($category_id,$store_id,$layout_id) ";
 							$first_category_to_layout = false;
 						}
-
 					}
 
 					if (!$first_category) {
@@ -2673,7 +2100,6 @@ class Controllerapismpextension extends Controller
 
 							$sql_category_description .= ";";
 							$this->db->query($sql_category_description);
-
 						}
 					}
 
@@ -2825,12 +2251,10 @@ class Controllerapismpextension extends Controller
 				
 				$sql_url_alias = "INSERT INTO `" . DB_PREFIX . "seo_url` (`keyword`,`query`,`store_id`,`language_id`) VALUES ";
 				$sql_url_aliasUPDATE = "INSERT INTO `" . DB_PREFIX . "seo_url` (`seo_url_id`,`keyword`,`query`,`store_id`,`language_id`) VALUES ";
-
 			} else { # Opencart 2
 				
 				$sql_url_alias = "INSERT INTO `" . DB_PREFIX . "url_alias` (`keyword`,`query`) VALUES ";
 				$sql_url_aliasUPDATE = "INSERT INTO `" . DB_PREFIX . "url_alias` (`url_alias_id`,`keyword`,`query`) VALUES ";
-
 			}
 
 			$first_category_id = true;
@@ -2903,15 +2327,14 @@ class Controllerapismpextension extends Controller
 
 					$dump = zip_entry_read($zip_entry, zip_entry_filesize($zip_entry));
 
-					$data_array = json_decode($dump);
+					$data_array = json_decode($dump, true);
 
 					$product_options_data = array(); // Для обработки опций продукта
 
 					foreach ($data_array as $data) {
 
-						$product_ref = $data->{'ref'};
-
-						$product_id = $data->{'product_id'};
+						$product_ref = $data['ref'];
+						$product_id = $data['product_id'];
 
 						if ($product_id == 0) {
 							$product_id_max = $product_id_max + 1;
@@ -2924,79 +2347,78 @@ class Controllerapismpextension extends Controller
 							$first_delete_path = false;
 						}
 
-						$categories = $data->{'categories'};
-						$options = $data->{'options'};
-						$attributes = $data->{'attributes'};
-						$filters = $data->{'filters'};
-						$attributes_udal = $data->{'attributes_udal'};
-						$filters_udal = $data->{'filters_udal'};
+						$categories = $data['categories'];
+						$options = $data['options'];
+						$attributes = $data['attributes'];
+						$filters = $data['filters'];
+						$attributes_udal = $data['attributes_udal'];
+						$filters_udal = $data['filters_udal'];
 
-						$quantity = $data->{'quantity'};
-						$model = urldecode($this->db->escape($data->{'model'}));
-						$manufacturer_name = urldecode($this->db->escape($data->{'manufacturer_name'}));
-						$manufacturer_image = urldecode($this->db->escape($data->{'manufacturer_image'}));
-						$manufacturer_description = urldecode($this->db->escape($data->{'manufacturer_description'}));
-						$manufacturer_keyword = urldecode($this->db->escape($data->{'manufacturer_keyword'}));
-						$language_id_u = $data->{'language_id_u'};
+						$quantity = $data['quantity'];
+						$model = urldecode($this->db->escape($data['model']));
+						$manufacturer_name = urldecode($this->db->escape($data['manufacturer_name']));
+						$manufacturer_image = urldecode($this->db->escape($data['manufacturer_image']));
+						$manufacturer_description = urldecode($this->db->escape($data['manufacturer_description']));
+						$manufacturer_keyword = urldecode($this->db->escape($data['manufacturer_keyword']));
+						$language_id_u = $data['language_id_u'];
 
-						#$image = $data->{'image'};
-						$shipping = $data->{'shipping'};
-						$price = trim($data->{'price'});
-						$points = $data->{'points'};
-						$date_added = $data->{'date_added'};
-						$date_modified = $data->{'date_modified'};
-						$date_available = $data->{'date_available'};
-						$weight = (int)$data->{'weight'};
-						$weight_unit = $data->{'weight_unit'};
-						$status = $data->{'status'};
-						$tax_class_id = $data->{'tax_class_id'};
-						$stock_status_id = $data->{'stock_status_id'};
+						$shipping = $data['shipping'];
+						$price = trim($data['price']);
+						$points = $data['points'];
+						$date_added = $data['date_added'];
+						$date_modified = $data['date_modified'];
+						$date_available = $data['date_available'];
+						$weight = (int)$data['weight'];
+						$weight_unit = $data['weight_unit'];
+						$status = $data['status'];
+						$tax_class_id = $data['tax_class_id'];
+						$stock_status_id = $data['stock_status_id'];
 
-						$descriptions = $this->object_to_array($data->{'descriptions'});
-						$meta_titles = $this->object_to_array($data->{'meta_titles'});
-						$meta_h1s   = $this->object_to_array($data->{'meta_h1'});
-						$meta_descriptions = $this->object_to_array($data->{'meta_descriptions'});
-						$names = $this->object_to_array($data->{'names'});
-						$meta_keywords = $this->object_to_array($data->{'meta_keywords'});
-						$tags = $this->object_to_array($data->{'tags'});
-						$keywords = $this->object_to_array($data->{'seo_keyword'});
-						$instructions_care = $this->object_to_array($data->{'care'});
-						$instructions_advantages = $this->object_to_array($data->{'advantages'});
+						$descriptions = $data['descriptions'];
+						$meta_titles = $data['meta_titles'];
+						$meta_h1s   = $data['meta_h1'];
+						$meta_descriptions = $data['meta_descriptions'];
+						$names = $data['names'];
+						$meta_keywords = $data['meta_keywords'];
+						$tags = $data['tags'];
+						$keywords = $data['seo_keyword'];
+						$instructions_care = $data['care'];
+						$instructions_advantages = $data['advantages'];
 
-						$length = (int)$data->{'length'};
-						$width = (int)$data->{'width'};
-						$height = (int)$data->{'height'};
+						$length = (int)$data['length'];
+						$width = (int)$data['width'];
+						$height = (int)$data['height'];
 
 						//$sort_order = $data->{'sort_order'};
 
-						$measurement_unit = $data->{'measurement_unit'};
-						$sku = urldecode($this->db->escape($data->{'sku'}));
-						$upc = urldecode($this->db->escape($data->{'upc'}));
-						$ean = urldecode($this->db->escape($data->{'ean'}));
-						$jan = urldecode($this->db->escape($data->{'jan'}));
-						$isbn = urldecode($this->db->escape($data->{'isbn'}));
-						$mpn =  urldecode($this->db->escape($data->{'mpn'}));
+						$measurement_unit = $data['measurement_unit'];
+						$sku = urldecode($this->db->escape($data['sku']));
+						$upc = urldecode($this->db->escape($data['upc']));
+						$ean = urldecode($this->db->escape($data['ean']));
+						$jan = urldecode($this->db->escape($data['jan']));
+						$isbn = urldecode($this->db->escape($data['isbn']));
+						$mpn =  urldecode($this->db->escape($data['mpn']));
 
-						$location = urldecode($this->db->escape($data->{'location'}));
-						$store_ids = $data->{'store_ids'};
-						$related_ids = $data->{'related_ids'};
+						$location = urldecode($this->db->escape($data['location']));
+						$store_ids = $data['store_ids'];
+						$related_ids = $data['related_ids'];
 
-						$layout = $data->{'layout'};
-						$subtract = $data->{'subtract'};
-						$minimum = $data->{'minimum'};
+						$layout = $data['layout'];
+						$subtract = $data['subtract'];
+						$minimum = $data['minimum'];
 
-						if (empty($data->{'specials'})) {
+						if (empty($data['specials'])) {
 							$specials_empty = true;
 						} else {
 							$specials_empty = false;
-							$specials = $data->{'specials'};
+							$specials = $data['specials'];
 						}
 
-						if (empty($data->{'discounts'})) {
+						if (empty($data['discounts'])) {
 							$discounts_empty = true;
 						} else {
 							$discounts_empty = false;
-							$discounts = $data->{'discounts'};
+							$discounts = $data['discounts'];
 						}
 
 						// extract the product details
@@ -3078,7 +2500,6 @@ class Controllerapismpextension extends Controller
 								$sql_product_tag  .= ($first_product_tag) ? "" : ",";
 								$sql_product_tag  .= " ($product_id, $language_id, '$tag') ";
 								$first_product_tag  = false;
-								
 							} else {
 
 								$sql_product_description  .= ($first_product_description) ? "" : ",";
@@ -3116,9 +2537,9 @@ class Controllerapismpextension extends Controller
 							$first_product_description = false;
 
 							foreach ($attributes as $attribute_str) {
-								$attribute_id = $attribute_str->{'attribute_id'};
-								$attribute_lang_id = $attribute_str->{'language'};
-								$text = urldecode($this->db->escape($attribute_str->{'text'}));
+								$attribute_id = $attribute_str['attribute_id'];
+								$attribute_lang_id = $attribute_str['language'];
+								$text = urldecode($this->db->escape($attribute_str['text']));
 								if ($language_code == $attribute_lang_id) {
 									$sql_product_attribute .= ($first_product_attribute) ? "" : ",";
 									$first_product_attribute = false;
@@ -3149,7 +2570,7 @@ class Controllerapismpextension extends Controller
 						}
 
 						foreach ($filters as $filter_str) {
-							$filter_id = $filter_str->{'filter_id'};
+							$filter_id = $filter_str['filter_id'];
 							$sql_product_filter .= ($first_product_filter) ? "" : ",";
 							$first_product_filter = false;
 							$sql_product_filter .= " ($product_id,$filter_id) ";
@@ -3165,8 +2586,8 @@ class Controllerapismpextension extends Controller
 							$count_main_category = 1;
 							foreach ($categories as $category_id) {
 								$sql_category_id .= ($first_category_id) ? "" : ",";
-								$main_category  =  $category_id->{'main'};
-								$category_id_id =  $category_id->{'id'};
+								$main_category  =  $category_id['main'];
+								$category_id_id =  $category_id['id'];
 								$sql_category_id .= " ($product_id, $category_id_id, $main_category) ";
 								$first_category_id = false;
 								$count_main_category = $count_main_category + 1;
@@ -3240,11 +2661,11 @@ class Controllerapismpextension extends Controller
 						if (!$specials_empty) {
 							if (count($specials) > 0) {
 								foreach ($specials as $special) {
-									$customer_group_id = $special->{'customer_group_id'};
-									$priority = $special->{'priority'};
-									$date_start = $special->{'date_start'};
-									$price = $special->{'price'};
-									$date_end = $special->{'date_end'};
+									$customer_group_id = $special['customer_group_id'];
+									$priority = $special['priority'];
+									$date_start = $special['date_start'];
+									$price = $special['price'];
+									$date_end = $special['date_end'];
 
 									$sql_product_special .= ($first_product_special) ? "" : ",";
 									$sql_product_special .= "  ($product_id, $customer_group_id,  $priority, $price,'$date_start','$date_end') ";
@@ -3261,12 +2682,12 @@ class Controllerapismpextension extends Controller
 						if (!$discounts_empty) {
 							if (count($discounts) > 0) {
 								foreach ($discounts as $discount) {
-									$customer_group_id = $discount->{'customer_group_id'};
-									$priority = $discount->{'priority'};
-									$date_start = $discount->{'date_start'};
-									$price = $discount->{'price'};
-									$date_end = $discount->{'date_end'};
-									$quantity = $discount->{'quantity'};
+									$customer_group_id = $discount['customer_group_id'];
+									$priority = $discount['priority'];
+									$date_start = $discount['date_start'];
+									$price = $discount['price'];
+									$date_end = $discount['date_end'];
+									$quantity = $discount['quantity'];
 
 									$sql_product_discount .= ($first_product_discount) ? "" : ",";
 									$sql_product_discount .= "  ($product_id, $customer_group_id, $quantity,  $priority, $price,'$date_start','$date_end') ";
@@ -3322,6 +2743,7 @@ class Controllerapismpextension extends Controller
 			$sql_product  .= ";";
 			$this->db->query($sql_product);
 
+			/* TEMPORARY
 			if (!$first_delete_product_special) {
 				$sql_delete_product_special .= ");";
 				$this->db->query($sql_delete_product_special);
@@ -3338,6 +2760,7 @@ class Controllerapismpextension extends Controller
 				$sql = "ALTER TABLE `" . DB_PREFIX . "product_special` AUTO_INCREMENT = $product_special_id ;";
 				$this->db->query($sql);
 			}
+			*/
 
 			if (!$first_delete_product_discount) {
 
@@ -3374,7 +2797,7 @@ class Controllerapismpextension extends Controller
 
 			if (!$first_product_special) {
 				$sql_product_special .= ";";
-				$this->db->query($sql_product_special);
+				//$this->db->query($sql_product_special); TEMPORARY
 			}
 
 			if (!$first_product_discount) {
@@ -3961,6 +3384,22 @@ class Controllerapismpextension extends Controller
 			Останутся только те, что выбраны в карточке товара в 1С. 
 		*/
 
+		// SPECIALS FOR OPTIONS:
+		$opt_special_exist = $this->optionSpecialTableExist();
+		if ($opt_special_exist) {
+
+			$sql_opt_spec = "INSERT INTO `" . DB_PREFIX . "option_special` 
+			(product_id, 
+			product_option_id, 
+			product_option_value_id, 
+			customer_group_id, 
+			priority, 
+			price, 
+			date_start, 
+			date_end) VALUES ";
+
+		}
+
 		$return_data_arr = array();
 
 		$sql_product_option = "INSERT INTO `" . DB_PREFIX . "product_option` (`product_option_id`,`product_id`,`option_id`,`value`,`required`) VALUES ";
@@ -4006,6 +3445,11 @@ class Controllerapismpextension extends Controller
 
 			$options_quantity = count($options);
 
+			// OPTIONS SPECIALS
+			if ($opt_special_exist) {
+				$this->db->query("DELETE FROM " . DB_PREFIX . "option_special WHERE product_id = '" . (int)$product_id . "'");
+			}
+
 			if ($options_quantity == 0) {
 
 				$this->db->query("DELETE FROM " . DB_PREFIX . "product_option WHERE product_id = '" . (int)$product_id . "'");
@@ -4017,9 +3461,9 @@ class Controllerapismpextension extends Controller
 				foreach ($options as $option_data) {
 
 					$return_option_data = array();
-					$option_ref = $option_data->{'ref'};
-					$option_id = $option_data->{'option_id'};
-					$product_option_id = $option_data->{'product_option_id'};
+					$option_ref = $option_data['ref'];
+					$option_id = $option_data['option_id'];
+					$product_option_id = $option_data['product_option_id'];
 
 					if ($product_option_id == 0) {
 						
@@ -4032,7 +3476,6 @@ class Controllerapismpextension extends Controller
 							if ($query_pd_opt->num_rows > 0) {
 								$product_option_id = $query_pd_opt->row['product_option_id'];
 							}
-
 						}
 
 						if (!isset($product_option_id)) {
@@ -4043,25 +3486,25 @@ class Controllerapismpextension extends Controller
 
 					$pd_options_not_delete[$option_id] = $product_option_id;
 
-					$option_value_id = $option_data->{'option_value_id'};
-					$product_option_value_id = $option_data->{'product_option_value_id'};
+					$option_value_id = $option_data['option_value_id'];
+					$product_option_value_id = $option_data['product_option_value_id'];
 
 					if ($product_option_value_id == 0) {
 						$product_option_value_id = $max_pd_option_value_id;
 						$max_pd_option_value_id++;
 					}
 
-					$quantity = $option_data->{'quantity'};
-					$subtract = $option_data->{'subtract'};
-					$price = $option_data->{'price'};
-					$price_prefix = $option_data->{'price_prefix'};
-					$points = $option_data->{'points'};
-					$points_prefix = $option_data->{'points_prefix'};
-					$weight = $option_data->{'weight'};
-					$weight_prefix = $option_data->{'weight_prefix'};
+					$quantity = $option_data['quantity'];
+					$subtract = $option_data['subtract'];
+					$price = $option_data['price'];
+					$price_prefix = $option_data['price_prefix'];
+					$points = $option_data['points'];
+					$points_prefix = $option_data['points_prefix'];
+					$weight = $option_data['weight'];
+					$weight_prefix = $option_data['weight_prefix'];
 
 					$sql_product_option_value_part2 .= ($first_product_option_value) ? "" : ",";
-					$sql_product_option_value_part2 .= " ($product_option_value_id, $product_option_id, $product_id, $option_id, $option_value_id ,$quantity,$subtract,$price,'$price_prefix',$points,'$points_prefix', $weight,'$weight_prefix') ";
+					$sql_product_option_value_part2 .= " ($product_option_value_id, $product_option_id, $product_id, $option_id, $option_value_id ,$quantity, $subtract, $price, '$price_prefix', $points, '$points_prefix', $weight, '$weight_prefix') ";
 
 					$sql_product_option_value_delete .= ($first_product_option_value) ? "" : ",";
 					$sql_product_option_value_delete .= $product_option_value_id;
@@ -4073,6 +3516,24 @@ class Controllerapismpextension extends Controller
 					$return_option_data['product_option_id'] = $product_option_id;
 					$return_option_data['product_option_value_id'] = $product_option_value_id;
 					$return_options[] = $return_option_data;
+
+					// OPTION SPECIAL
+					if ($opt_special_exist) {
+
+						$option_special = $option_data['option_special'];
+
+						foreach ($option_special as $special_data) {
+
+							$customer_group_id = $special_data['customer_group_id'];
+							$priority = $special_data['priority'];
+							$price = $special_data['price'];
+							$date_start = $special_data['date_start'];
+							$date_end = $special_data['date_end'];
+
+							$sql_special = $sql_opt_spec . "($product_id, $product_option_id, $product_option_value_id, $customer_group_id, $priority, $price, '$date_start', '$date_end')";
+							$this->db->query($sql_special);
+						}
+					}
 				} // Цикл по опциям конкретного товара
 
 				$sql_product_option_delete = "DELETE FROM " . DB_PREFIX . "product_option WHERE product_id = '" . (int)$product_id . "' AND product_option_id NOT IN (";
@@ -4100,7 +3561,6 @@ class Controllerapismpextension extends Controller
 
 					$this->db->query($sql_product_option_delete);
 					$this->db->query($sql_product_option_result);
-
 				}
 				////////////////////////////////////////////////////////////////////
 
@@ -4114,7 +3574,6 @@ class Controllerapismpextension extends Controller
 
 					$this->db->query($sql_product_option_value_delete);
 					$this->db->query($sql_product_option_value_result);
-
 				}
 			}
 
@@ -4299,9 +3758,8 @@ class Controllerapismpextension extends Controller
 
 						if ($option_id == 0) {
 
-							$option_id_max = $option_id_max++;
+							$option_id_max++;
 							$option_id = $option_id_max;
-						
 						};
 
 						$sql_option .= ($first_option) ? "" : ",";
@@ -4617,7 +4075,7 @@ class Controllerapismpextension extends Controller
 				foreach ($attr_descriptions as $language_code => $description) {
 
 					$language_id = $languages[$language_code]['language_id'];
-					$description = trim($this->db->escape(urldecode($description)));
+					$description = trim(urldecode($this->db->escape($description)));
 					$this->db->query("INSERT INTO " . DB_PREFIX . "product_attribute SET product_id = '" . (int)$product_id . "', attribute_id = '" . (int)$attribute_id . "', language_id = '" . (int)$language_id . "', text = '" .  $description . "'");
 				}
 			}
