@@ -217,7 +217,46 @@ class Controllerapismpextension extends Controller
 
 	#region ORDERS
 
-/* Получение списка статусов для заказов покупателей
+	public function update_order_status()
+	{
+		$this->load->language('api/update_order_status');
+		$json = array();
+
+		$order_id = (int)$this->request->get['order_id'];
+		$order_status_id = (int)$this->request->get['order_status_id'];
+
+		$sql_order_check = "SELECT * FROM `" . DB_PREFIX . "order` WHERE order_id = $order_id";
+		$query = $this->db->query($sql_order_check);
+		$rows = $query->rows;
+		if (count($rows) == 0) {
+
+			$json['error'] = "Unable to update order status: order №$order_id not found on the site";
+		} else {
+
+			$sql_status_check = "SELECT order_status_id FROM `" . DB_PREFIX . "order_status` WHERE order_status_id = $order_status_id";
+			$query = $this->db->query($sql_status_check);
+			$rows = $query->rows;
+
+			if (count($rows) == 0) {
+
+				$json['error'] = "Unable to update status for order №$order_id: order status id $order_status_id not found on the site";
+			} else {
+
+				$sql_upd_order = "UPDATE `" . DB_PREFIX . "order` SET order_status_id = $order_status_id, date_modified = NOW() WHERE order_id = $order_id";
+				$this->db->query($sql_upd_order);
+
+				$sql_add_order_history = "INSERT INTO `" . DB_PREFIX . "order_history` (`order_id`,`order_status_id`,`date_added`) VALUES ($order_id, $order_status_id, NOW())";
+				$this->db->query($sql_add_order_history);
+
+				$json['success'] = "Status for order №$order_id updated successfully.";
+			}
+		}
+
+		$this->response->addHeader('Content-Type: application/json');
+		$this->response->setOutput(json_encode($json));
+	}
+
+	/* Получение списка статусов для заказов покупателей
 	*/
 	public function get_order_statuses()
 	{
