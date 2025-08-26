@@ -1,34 +1,36 @@
 <?php
 
+use Cardinity\Method\Payment\Get;
+
 class ModelCatalogSmpPayment extends Model
 {
 
-    public function GetOrderPaymentDetails($order_id)
+    public function getOrderPaymentDetails($order_id, $payment_code, $payment_method)
 	{
-		/*
-		$sql_payment_details = "SELECT * FROM `" . DB_PREFIX . "lqp_list` WHERE order_id = $order_id";
-		$query = $this->db->query($sql_payment_details);
-		$rows = $query->rows;
-
-		if (count($rows) == 0) {
-			return null;
+		if ($payment_code == 'wayforpay') {
+			$payment_details = $this->getWayforpayPaymentData($order_id);
+		} elseif ($payment_code == 'lqp') {
+			$payment_details = $this->getLiqpayPaymentData($order_id);
 		} else {
-			return $rows;
+			$payment_details = []; // short form for array
 		}
-		*/
-
-		$payment_details = []; // short form for array
 		
 		return $payment_details;
 
 	}
 
-	public function getWayforpayPaymentDetails(int $order_id) : array 
+	protected function getWayforpayPaymentData(int $order_id) 
 	{
 
 		$data = [];
+		return $data;
 
+	}
 
+	protected function getLiqpayPaymentData(int $order_id)
+	{
+
+		$data = [];
 		return $data;
 
 	}

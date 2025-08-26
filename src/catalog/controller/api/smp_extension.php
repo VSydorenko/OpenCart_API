@@ -346,6 +346,7 @@ class Controllerapismpextension extends Controller
 		order_table.date_added, 
 		order_table.date_modified, 
 		order_table.currency_code,
+		order_table.free_shipping, 
 		ROUND(order_table.currency_value, 4) AS currency_value 
 		FROM `" . DB_PREFIX . "order` AS order_table";
 
@@ -478,6 +479,7 @@ class Controllerapismpextension extends Controller
 		order_table.date_added, 
 		order_table.date_modified, 
 		order_table.currency_code,
+		order_table.free_shipping,  
 		ROUND(order_table.currency_value, 4) AS currency_value
 		FROM `" . DB_PREFIX . "order` AS order_table";
 
@@ -522,10 +524,13 @@ class Controllerapismpextension extends Controller
 
 				if ($row['code'] == 'shipping') {
 					$shipping_details['cost'] = (float)$row['value'];
+				
+					/* поки що відключено, знижки забираємо з таблиці "order_discounts" в розрізі кожного товару
 				} elseif ($row['code'] == 'discount') {
 						$order_data['total_discount'] = (float)$order_data['total_discount'] + (float)$row['value'];
 				} elseif ($row['code'] == 'reward' || $row['code'] == 'coupon' || $row['code'] == 'voucher' || $row['code'] == 'everyn') { // everyn - модуль знижки на кожен n-товар в замовленні
 					$order_data['total_discount'] = (float)$order_data['total_discount'] + (float)$row['value'];	
+					*/
 				}
 			}
 
@@ -551,14 +556,18 @@ class Controllerapismpextension extends Controller
 		order_product_tbl.product_id, 
 		order_product_tbl.name, 
 		order_product_tbl.model, 
-		order_product_tbl.quantity, 
-		order_product_tbl.price, 
-		order_product_tbl.total, 
+		IFNULL(ord_dsc_tbl.quantity, order_product_tbl.quantity) AS quantity, 
+		IFNULL(ord_dsc_tbl.price, order_product_tbl.price) AS price, 
+		IFNULL(ord_dsc_tbl.total_price, order_product_tbl.total) AS total,
+		IFNULL(ord_dsc_tbl.special_price, 0) AS special_price,
+		IFNULL(ord_dsc_tbl.total_special_price, 0) AS total_special,
 		order_product_tbl.tax, 
 		order_product_tbl.reward,
-		IF (product_tbl.product_id IS NULL, TRUE, FALSE) AS product_not_exist
+		IF (product_tbl.product_id IS NULL, TRUE, FALSE) AS product_not_exist,
+		ord_dsc_tbl.product_option_value_id AS order_discount_product_option_value_id
 		FROM `" . DB_PREFIX . "order_product` AS order_product_tbl 
 		LEFT JOIN `" . DB_PREFIX . "product` AS product_tbl ON product_tbl.product_id = order_product_tbl.product_id 
+		LEFT JOIN `" . DB_PREFIX . "order_discounts` AS ord_dsc_tbl ON ord_dsc_tbl.order_id = order_product_tbl.order_id AND ord_dsc_tbl.product_id = order_product_tbl.product_id
 		WHERE order_product_tbl.order_id = $order_id 
 		ORDER BY order_product_tbl.order_product_id ASC";
 

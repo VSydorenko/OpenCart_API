@@ -15,7 +15,6 @@ class ModelCatalogSmpShipping extends Model
             $this->getNovaPoshtaShippingData($shipping_details, $shipping_address_1, $shipping_city);
         }
 
-
         return $shipping_details;
 
     }
